@@ -1,0 +1,7 @@
+{
+  "id": "/", "name": "Turnia · Cada turno cuenta", "short_name": "Turnia",
+  "description": "Registra jornadas, organiza tu equipo y reparte propinas por áreas y horas.",
+  "lang": "es-CL", "start_url": "./", "scope": "./", "display": "standalone",
+  "background_color": "#F6F7F4", "theme_color": "#14283F",
+  "icons": [{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]
+}

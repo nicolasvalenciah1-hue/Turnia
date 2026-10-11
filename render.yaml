@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    runtime: static
+    name: turnia
+    repo: https://github.com/nicolasvalenciah1-hue/Turnia
+    branch: main
+    buildCommand: node --check dist/app.js && node --check dist/sw.js
+    staticPublishPath: dist
+    autoDeployTrigger: commit
+    envVars:
+      - key: SKIP_INSTALL_DEPS
+        value: "true"
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Cache-Control
+        value: no-cache
