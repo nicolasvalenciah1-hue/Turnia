@@ -96,7 +96,7 @@ async function init() {
   user = result.session?.user || null;
   if (!user) {
     context = null; rid = ''; loadVersion++; resetData();
-    $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('auth').classList.remove('hide'); $('loading').classList.add('hide');
+    $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('sandboxCheckoutPanel').classList.add('hide'); $('auth').classList.remove('hide'); $('loading').classList.add('hide');
     return;
   }
   context = await call('propina_account_context');
@@ -116,6 +116,16 @@ async function init() {
     $('auth').classList.add('hide');
     $('loading').classList.add('hide');
     $('pendingRegistration').classList.remove('hide');
+    $('sandboxCheckoutPanel').classList.add('hide');
+    // Availability is display-only; the checkout backend repeats all checks.
+    if (registration?.status === 'pending_payment') {
+      try {
+        if (await call('turnia_sandbox_checkout_available') === true)
+          $('sandboxCheckoutPanel').classList.remove('hide');
+      } catch {
+        // If the gate cannot be verified, keep payment controls hidden.
+      }
+    }
     return;
   }
   $('pendingRegistration').classList.add('hide');
@@ -296,6 +306,26 @@ async function logout() {
 bind('logout', logout);
 bind('logoutTop', logout);
 bind('pendingLogout', logout);
+bind('sandboxPay', async () => {
+  if ($('sandboxCheckoutPanel').classList.contains('hide'))
+    throw Error('Las pruebas de pago todavía no están habilitadas.');
+  const buyer = $('sandboxBuyer').value.trim().toLowerCase();
+  if (!/^[^@\s]+@testuser\.com$/i.test(buyer))
+    throw Error('Ingresa un comprador de pruebas de Mercado Pago.');
+  const result = check(await sb.functions.invoke('turnia-sandbox-checkout', {
+    body: {payer_email: buyer}
+  }));
+  if (result?.mode !== 'sandbox' || result?.status !== 'pending' ||
+      !/^https:\/\//.test(result?.init_point || ''))
+    throw Error('Mercado Pago no devolvió un enlace de prueba válido.');
+  const target = new URL(result.init_point);
+  if (target.hostname !== 'mercadopago.com' &&
+      !target.hostname.endsWith('.mercadopago.com') &&
+      target.hostname !== 'mercadopago.cl' &&
+      !target.hostname.endsWith('.mercadopago.cl'))
+    throw Error('El destino de pago no pertenece a Mercado Pago.');
+  location.assign(target.href);
+});
 $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData();
   $('profileRole').textContent = context?.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
