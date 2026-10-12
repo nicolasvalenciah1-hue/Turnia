@@ -63,7 +63,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
       const entries=args.p_entries.map(e=>({...e,worker_name:e.worker_id==='w2'?'Camila':'=FORMULA',area_id:'a1'}));
       data.propina_flex_shifts=data.propina_flex_shifts.filter(s=>s.work_date!==args.p_date||s.shift_code!==args.p_shift);
       data.propina_flex_shifts.push({id:'flex1',restaurant_id:'r1',work_date:args.p_date,shift_code:args.p_shift,amount_clp:args.p_amount,rules,entries});
-      data.propina_flex_payouts=[{restaurant_id:'r1',work_date:args.p_date,group_code:args.p_shift,worker_id:entries[0].worker_id,worker_name:entries[0].worker_name,area_id:'a1',area_name:'Garzones',weight:entries[0].weight,calculated_clp:args.p_amount}];
+      data.propina_flex_payouts=[{restaurant_id:'r1',work_date:args.p_date,group_code:args.p_shift,worker_id:entries[0].worker_id,worker_name:entries[0].worker_name,area_id:'a1',area_name:'Garzones',weight:entries[0].weight,calculated_clp:data.propina_flex_shifts.filter(s=>s.work_date===args.p_date).reduce((total,s)=>total+s.amount_clp,0)}];
       return {data:'flex1'};
     }
     if(name==='propina_save_day'){
@@ -86,7 +86,7 @@ if (require.main === module) (async()=>{
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=unified-onboarding-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=unified-onboarding-20261012-1'),'App asset is versioned');
+  assert(html.includes('app.js?v=historial-unificado-20261012-3'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v7'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
@@ -139,6 +139,8 @@ if (require.main === module) (async()=>{
   const save=a.calls.find(c=>c[0]==='propina_save_day'); assert(save,'Atomic day RPC');
   assert.equal(save[1].p_amount,120000);assert.deepEqual(JSON.parse(JSON.stringify(save[1].p_workers)),[{worker_id:'w2',hours:8}]);
   assert(!a.d.querySelector('#distribution').classList.contains('hide'),'Saved day opens distribution');
+  assert.match(a.d.querySelector('#daySaveStatus').textContent,/guardada correctamente/i,'Save must be confirmed next to the form');
+  assert(a.d.querySelector('#historyRows').textContent.includes('Jornada completa'),'Classic day appears in unified history');
   a.d.querySelector('#restaurant').value='r2';a.d.querySelector('#restaurant').dispatchEvent(new a.w.Event('change'));await flush();
   assert(!a.d.querySelector('#payouts').textContent.includes('Camila'),'Restaurant switch clears old data');
   assert(!a.d.querySelector('#membershipCard').textContent.includes('20 días'),'No membership fallback from another restaurant');
@@ -225,6 +227,32 @@ if (require.main === module) (async()=>{
   assert.equal(flexSave[1].p_entries[0].weight,0.25);
   assert(flexSave[1].p_entries[0].agreed);
   assert.equal(flex.d.querySelector('#flexPayoutRows').children.length,1,'Flexible payout loads after save');
+  assert(flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]'),'Flexible shift appears in unified history');
+  assert.equal(flex.d.querySelectorAll('#historyRows [data-open-flex-date="2026-10-09"]').length,1,'One flex row per day');
+  flex.d.querySelector('#flexShiftCode').value='PM';
+  flex.d.querySelector('#flexShiftCode').dispatchEvent(new flex.w.Event('change'));
+  flex.d.querySelector('#flexAmount').value='999';
+  flex.d.querySelector('[data-flex-present="w2"]').checked=true;
+  flex.d.querySelector('#saveFlexShift').click(); await flush();
+  const row=flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]').closest('tr');
+  assert.equal(flex.d.querySelectorAll('#historyRows [data-open-flex-date="2026-10-09"]').length,1,'Two shifts stay one history row');
+  assert.match(row.textContent,/Por turnos/,'History labels the distribution method, not individual shifts');
+  assert(!/Turno AM|Turno PM/.test(row.textContent),'History does not split AM and PM');
+  assert.match(row.textContent,/2\.000/,'History totals AM and PM');
+  assert.match(flex.d.querySelector('#historySummary').textContent,/2 día\(s\)/,'History counts dates, not shifts');
+  flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]').click();
+  assert.equal(flex.d.querySelector('#flexDate').value,'2026-10-09');
+  assert.equal(flex.d.querySelector('#dayEntryMode').value,'flex','Unified history opens saved AM/PM mode');
+  const beforeClassic = flex.calls.filter(x=>x[0]==='propina_save_day').length;
+  flex.d.querySelector('#dayEntryMode').value='classic';
+  flex.d.querySelector('#dayEntryMode').dispatchEvent(new flex.w.Event('change'));
+  flex.d.querySelector('#date').value='2026-10-09';
+  flex.d.querySelector('#date').dispatchEvent(new flex.w.Event('change'));
+  flex.d.querySelector('#amount').value='1001';
+  flex.d.querySelector('[data-present="w2"]').checked=true;
+  flex.d.querySelector('#saveDay').click(); await flush();
+  assert.equal(flex.calls.filter(x=>x[0]==='propina_save_day').length,beforeClassic,'Cannot save full day over a flexible turn');
+  assert.match(flex.d.querySelector('#daySaveStatus').textContent,/no se guardó.*AM\/PM/i,'Conflict shown beside save button');
   assert(!flex.calls.some(x=>x[0]==='propina_save_day'),'Flexible saves cannot overwrite classic days');
   flex.d.querySelector('#flexDate').value='2026-10-01';
   flex.d.querySelector('#flexDate').dispatchEvent(new flex.w.Event('change'));
