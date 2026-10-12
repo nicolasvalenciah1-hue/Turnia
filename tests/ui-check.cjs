@@ -228,6 +228,18 @@ if (require.main === module) (async()=>{
   assert(flexSave[1].p_entries[0].agreed);
   assert.equal(flex.d.querySelector('#flexPayoutRows').children.length,1,'Flexible payout loads after save');
   assert(flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]'),'Flexible shift appears in unified history');
+  assert.equal(flex.d.querySelectorAll('#historyRows [data-open-flex-date="2026-10-09"]').length,1,'One flex row per day');
+  flex.d.querySelector('#flexShiftCode').value='PM';
+  flex.d.querySelector('#flexShiftCode').dispatchEvent(new flex.w.Event('change'));
+  flex.d.querySelector('#flexAmount').value='999';
+  flex.d.querySelector('[data-flex-present="w2"]').checked=true;
+  flex.d.querySelector('#saveFlexShift').click(); await flush();
+  const row=flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]').closest('tr');
+  assert.equal(flex.d.querySelectorAll('#historyRows [data-open-flex-date="2026-10-09"]').length,1,'Two shifts stay one history row');
+  assert.match(row.textContent,/Por turnos/,'History labels the distribution method, not individual shifts');
+  assert(!/Turno AM|Turno PM/.test(row.textContent),'History does not split AM and PM');
+  assert.match(row.textContent,/2\.000/,'History totals AM and PM');
+  assert.match(flex.d.querySelector('#historySummary').textContent,/2 día\(s\)/,'History counts dates, not shifts');
   flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]').click();
   assert.equal(flex.d.querySelector('#flexDate').value,'2026-10-09');
   assert.equal(flex.d.querySelector('#dayEntryMode').value,'flex','Unified history opens saved AM/PM mode');
