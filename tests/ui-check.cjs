@@ -72,8 +72,19 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   a.d.querySelector('#restaurant').value='r2';a.d.querySelector('#restaurant').dispatchEvent(new a.w.Event('change'));await flush();
   assert(!a.d.querySelector('#payouts').textContent.includes('Camila'),'Restaurant switch clears old data');
   assert(!a.d.querySelector('#membershipCard').textContent.includes('20 días'),'No membership fallback from another restaurant');
-  a.d.querySelector('#logout').click();await flush();assert(a.d.querySelector('#app').classList.contains('hide'));assert(!a.d.querySelector('#auth').classList.contains('hide'));
+  // Both the main topbar and scrolling sidebar must expose sign-out.
+  assert.equal(a.d.querySelector('#logoutTop').getAttribute('aria-label'),'Cerrar sesión');
+  a.d.querySelector('#logoutTop').click();await flush();
+  assert(a.d.querySelector('#app').classList.contains('hide'),'Topbar logout hides app');
+  assert(!a.d.querySelector('#auth').classList.contains('hide'),'Topbar logout shows auth screen');
+  assert(a.calls.some(call=>call[0]==='signOut')===false || !a.errors.length);
+  
   assert.equal(a.errors.length,0);a.dom.window.close();
+  const side=await app();
+  side.d.querySelector('#logout').click();await flush();
+  assert(side.d.querySelector('#app').classList.contains('hide'),'Sidebar logout still works');
+  assert(!side.d.querySelector('#auth').classList.contains('hide'));
+  side.dom.window.close();
   const b=await app({platform:false,role:'viewer'});
   assert(b.d.querySelector('#saveDay').disabled,'Viewer cannot save');
   assert(b.d.querySelector('#ownerNav').classList.contains('hide'));assert(b.d.querySelector('#staffInvitePanel').classList.contains('hide'));

@@ -269,11 +269,13 @@ bind('savePassword', async () => {
   $('newPassword').value = ''; $('confirmPassword').value = ''; recoveryMode = false;
   $('recovery').classList.add('hide'); await init(); msg('Contraseña actualizada.','success');
 });
-bind('logout', async () => {
+async function logout() {
   check(await sb.auth.signOut()); context = null; user = null; rid = ''; loadVersion++;
   resetData(); closeDrawer(); setTab('home'); $('password').value = ''; $('invite').value = ''; $('acceptToken').value = '';
   $('authMessage').textContent = ''; $('message').textContent = ''; await init();
-});
+}
+bind('logout', logout);
+bind('logoutTop', logout);
 $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData();
   $('profileRole').textContent = context?.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
