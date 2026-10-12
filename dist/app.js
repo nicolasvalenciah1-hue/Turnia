@@ -675,6 +675,8 @@ async function loadPlatform() {
     if (version !== platformVersion || !context?.platform_admin) return;
     platformRestaurants = result.restaurants || []; platformInvitations = result.invitations || [];
     renderPlatformRestaurants();
+    // Restaurant names can arrive after the ticket list; refresh labels once the platform snapshot resolves.
+    if (ownerSupportTickets.length) $('ownerSupportTickets').innerHTML = ownerSupportTickets.map(t=>supportCard(t,true)).join('');
     $('platformInvitations').innerHTML = invitationRows(platformInvitations, true);
     const archived=platformRestaurants.filter(r=>!!r.archived_at).length;
     $('platformStatus').textContent = `${platformRestaurants.length} restaurante(s) · ${platformRestaurants.filter(r => r.active && !r.archived_at).length} activo(s) · ${archived} archivado(s). Los cobros permanecen desactivados.`;

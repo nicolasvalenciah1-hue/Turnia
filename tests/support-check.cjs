@@ -38,7 +38,8 @@ function installSupportStore(ctx,{tickets=[],messages=[]}={}){
   return {tickets,messages};
 }
 (async()=>{
-  const a=await app({platform:true});
+  let completePlatform;
+  const a=await app({platform:true,rpcOverrides:{propina_platform_snapshot:()=>new Promise(resolve=>{completePlatform=resolve;})}});
   const store=installSupportStore(a);
   a.d.querySelector('[data-tab="support"]').click(); await flush();
   assert(!a.d.querySelector('#support').classList.contains('hide'),'Support navigation opens for restaurant');
@@ -67,6 +68,11 @@ function installSupportStore(ctx,{tickets=[],messages=[]}={}){
   a.d.querySelector('[data-tab="owner"]').click();await flush();
   assert.match(a.d.querySelector('#ownerSupportTickets').textContent,/Problema al guardar/,'Platform owner inbox sees report');
   assert.match(a.d.querySelector('#ownerSupportStatus').textContent,/1 solicitudes/);
+  assert.match(a.d.querySelector('#ownerSupportTickets').textContent,/Restaurante/,'Before snapshot, placeholder may appear');
+  assert.equal(typeof completePlatform,'function','Platform overview should be requested');
+  completePlatform({data:{restaurants:[{id:'r1',name:'Local uno',email:'owner@example.test',active:true,members:1}],invitations:[]}});
+  await flush();
+  assert.match(a.d.querySelector('#ownerSupportTickets').textContent,/Local uno/,'After restaurant data loads, the owner inbox must show the correct restaurant name');
   assert.equal(a.errors.length,0,'No browser errors in owner flow');
   a.dom.window.close();
 
