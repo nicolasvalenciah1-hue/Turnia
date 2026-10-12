@@ -63,7 +63,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
       const entries=args.p_entries.map(e=>({...e,worker_name:e.worker_id==='w2'?'Camila':'=FORMULA',area_id:'a1'}));
       data.propina_flex_shifts=data.propina_flex_shifts.filter(s=>s.work_date!==args.p_date||s.shift_code!==args.p_shift);
       data.propina_flex_shifts.push({id:'flex1',restaurant_id:'r1',work_date:args.p_date,shift_code:args.p_shift,amount_clp:args.p_amount,rules,entries});
-      data.propina_flex_payouts=[{restaurant_id:'r1',work_date:args.p_date,group_code:args.p_shift,worker_id:entries[0].worker_id,worker_name:entries[0].worker_name,area_id:'a1',area_name:'Garzones',weight:entries[0].weight,calculated_clp:args.p_amount}];
+      data.propina_flex_payouts=[{restaurant_id:'r1',work_date:args.p_date,group_code:args.p_shift,worker_id:entries[0].worker_id,worker_name:entries[0].worker_name,area_id:'a1',area_name:'Garzones',weight:entries[0].weight,calculated_clp:data.propina_flex_shifts.filter(s=>s.work_date===args.p_date).reduce((total,s)=>total+s.amount_clp,0)}];
       return {data:'flex1'};
     }
     if(name==='propina_save_day'){
