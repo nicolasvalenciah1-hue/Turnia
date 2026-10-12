@@ -6,6 +6,7 @@ const {JSDOM} = require('jsdom');
 const html=fs.readFileSync(__dirname+'/../dist/registro.html','utf8');
 const js=fs.readFileSync(__dirname+'/../dist/registro.js','utf8');
 const migration=fs.readFileSync(__dirname+'/../supabase/migrations/20261012_turnia_self_registration.sql','utf8');
+const activation=fs.readFileSync(__dirname+'/../supabase/migrations/20261012_turnia_verified_payment_activation.sql','utf8');
 const entry=fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 
 assert(entry.includes('href="registro.html"'),'Signup linked from login');
@@ -17,6 +18,14 @@ assert(!/insert\s+into\s+public\.propina_access/i.test(migration),'Signup does n
 assert(!/insert\s+into\s+propina_private\.memberships/i.test(migration),'Signup does not create memberships');
 assert(migration.includes('pending_payment'),'Pending state required');
 assert(migration.includes('valid_self_registration'),'Signup requires validation');
+assert(migration.includes('self_registration_enabled boolean NOT NULL DEFAULT FALSE'),'Registration is disabled by default');
+assert(migration.includes('automatic_activation_enabled boolean NOT NULL DEFAULT FALSE'),'Activation is disabled by default');
+assert(migration.includes('allow_live_activations boolean NOT NULL DEFAULT FALSE'),'Real payments are disabled');
+assert(activation.includes('activate_verified_registration'),'Server activation prepared');
+assert(activation.includes("COALESCE(auth.role(),'') <> 'service_role'"),'Activation limited to verified service_role');
+assert(activation.includes("signup.status <> 'pending_payment'"),'Only pending accounts can be activated');
+assert(activation.includes('IF verified.applied_at IS NOT NULL'),'Duplicate payments cannot create another restaurant');
+assert(!activation.includes('GRANT EXECUTE ON FUNCTION propina_private.activate_verified_registration(text) TO authenticated'),'Customers cannot activate themselves');
 
 const dom=new JSDOM(html,{url:'https://turnia.test/registro.html',runScripts:'outside-only'});
 const w=dom.window,d=w.document;
