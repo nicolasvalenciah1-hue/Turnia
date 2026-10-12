@@ -85,7 +85,28 @@ function updatePermissions() {
   $('staffInvitePanel').classList.toggle('hide', !canInvite());
   $('ownerNav').classList.toggle('hide', !context?.platform_admin);
   $('adminPanel').classList.toggle('hide', !context?.platform_admin);
+  const restaurantOwner = !!rid && currentRestaurant()?.role === 'owner';
+  $('restaurantDetailsPanel').classList.toggle('hide', !rid);
+  $('restaurantEditName').disabled = !restaurantOwner;
+  $('saveRestaurantDetails').disabled = !restaurantOwner;
+  $('restaurantEditHelp').textContent = restaurantOwner
+    ? 'Puedes actualizar el nombre de este local sin modificar las jornadas ni las propinas.'
+    : 'Solo el propietario de este restaurante puede cambiar su nombre.';
   document.querySelectorAll('[data-present],[data-hours],[data-pct],[data-update-area],[data-toggle-worker]').forEach(el => el.disabled = !editing);
+}
+function renderAccountSettings() {
+  if (!user || !context) return;
+  const name = user.user_metadata?.display_name || user.user_metadata?.full_name || context.display_name || '';
+  $('accountDisplayName').value = name === user.email ? '' : name;
+  $('accountPhone').value = user.user_metadata?.phone || '';
+  $('accountEmailReadonly').value = user.email || '';
+  $('restaurantEditName').value = currentRestaurant()?.name || '';
+  updatePermissions();
+}
+function setSettingsStatus(text, kind = 'success') {
+  const target = $('settingsStatus');
+  target.textContent = text;
+  target.className = 'notice '+kind;
 }
 function resetData() {
   areas = []; workers = []; days = []; shifts = []; payouts = []; membershipContext = [];
@@ -139,6 +160,7 @@ async function init() {
   const name = context.display_name || user.email;
   $('profileName').textContent = name;
   $('profileRole').textContent = context.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
+  renderAccountSettings();
   $('avatar').textContent = name.split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase();
   $('greeting').textContent = context.platform_admin ? 'Hola, Nicolás.' : 'Tu equipo. Cada turno.';
   $('todayLabel').textContent = new Date().toLocaleDateString('es-CL', {weekday:'long',day:'numeric',month:'long'});
@@ -306,9 +328,44 @@ bind('savePassword', async () => {
   $('newPassword').value = ''; $('confirmPassword').value = ''; recoveryMode = false;
   $('recovery').classList.add('hide'); await init(); msg('Contraseña actualizada.','success');
 });
+bind('saveAccountProfile', async () => {
+  if (!user) throw Error('Debes iniciar sesión.');
+  const name = $('accountDisplayName').value.trim().replace(/\s+/g,' ');
+  const phone = $('accountPhone').value.trim();
+  if (name.length < 2 || name.length > 100) throw Error('Escribe tu nombre y apellido (2 a 100 caracteres).');
+  if (phone && !/^[+0-9 ()-]{7,30}$/.test(phone)) throw Error('Revisa el teléfono: usa números, espacios o el signo +.');
+  const update = check(await sb.auth.updateUser({data:{...user.user_metadata,display_name:name,full_name:name,phone}}));
+  if (update?.user) user = update.user;
+  await init(); setTab('access');
+  setSettingsStatus('Tus datos personales se guardaron correctamente.');
+});
+bind('changeAccountPassword', async () => {
+  if (!user?.email) throw Error('Debes iniciar sesión.');
+  const current = $('currentAccountPassword').value;
+  const next = $('nextAccountPassword').value;
+  if (!current) throw Error('Escribe tu contraseña actual.');
+  if (next.length < 8 || next.length > 128) throw Error('Tu nueva contraseña debe tener entre 8 y 128 caracteres.');
+  if (next !== $('nextAccountPasswordConfirm').value) throw Error('Las contraseñas nuevas no coinciden.');
+  if (current === next) throw Error('La nueva contraseña debe ser diferente de la actual.');
+  check(await sb.auth.signInWithPassword({email:user.email,password:current}));
+  check(await sb.auth.updateUser({password:next}));
+  $('currentAccountPassword').value = '';
+  $('nextAccountPassword').value = '';
+  $('nextAccountPasswordConfirm').value = '';
+  setSettingsStatus('Contraseña actualizada. La próxima vez podrás iniciar sesión con tu nueva clave.');
+});
+bind('saveRestaurantDetails', async () => {
+  const selected = rid;
+  const newName = $('restaurantEditName').value.trim().replace(/\s+/g,' ');
+  if (!selected || currentRestaurant()?.role !== 'owner') throw Error('Solo el propietario puede editar este restaurante.');
+  if (newName.length < 2 || newName.length > 120) throw Error('Ingresa un nombre de restaurante entre 2 y 120 caracteres.');
+  await call('propina_update_restaurant_name',{p_restaurant_id:selected,p_name:newName});
+  await init(); setTab('access');
+  setSettingsStatus('El nombre de tu restaurante se actualizó para todo el equipo.');
+});
 async function logout() {
   check(await sb.auth.signOut()); context = null; user = null; rid = ''; loadVersion++;
-  resetData(); closeDrawer(); setTab('home'); $('password').value = ''; $('invite').value = ''; $('acceptToken').value = '';
+  resetData(); closeDrawer(); setTab('home'); $('settingsStatus').textContent = ''; $('settingsStatus').className = 'notice hide'; $('currentAccountPassword').value = ''; $('nextAccountPassword').value = ''; $('nextAccountPasswordConfirm').value = ''; $('password').value = ''; $('invite').value = ''; $('acceptToken').value = '';
   $('authMessage').textContent = ''; $('message').textContent = ''; await init();
 }
 bind('logout', logout);
@@ -394,7 +451,7 @@ bind('sandboxPay', async () => {
  }
 });
 $('restaurant').onchange = () => guard(async () => {
-  rid = $('restaurant').value; loadVersion++; resetData();
+  rid = $('restaurant').value; loadVersion++; resetData(); renderAccountSettings();
   $('profileRole').textContent = context?.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
   await load();
 });
