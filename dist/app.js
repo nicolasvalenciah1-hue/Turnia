@@ -452,8 +452,8 @@ function renderDay() {
     const shift = current ? shifts.find(s => s.day_id === current.id && s.worker_id === w.id) : null;
     const participation = Number((Number(shift?.participation ?? 1) * 100).toFixed(2));
     const note = shift?.note || '', agreed = !!shift?.agreed;
-    return `<tr><td><input type="checkbox" aria-label="${safe(w.name)} trabajó" data-present="${safe(w.id)}" ${shift ? 'checked' : ''}></td><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><input aria-label="Horas de ${safe(w.name)}" type="number" data-hours="${safe(w.id)}" min="0.5" max="24" step="0.5" value="${Number(shift?.hours || $('shiftHours').value || 8)}"></td><td><input aria-label="Participación porcentual de ${safe(w.name)}" type="number" data-day-percent="${safe(w.id)}" min="1" max="200" step="0.01" value="${participation}"></td><td><div class="classic-participation-agreement"><input aria-label="Motivo del acuerdo para ${safe(w.name)}" data-day-note="${safe(w.id)}" maxlength="300" placeholder="Motivo para menos de 100%" value="${safe(note)}"><label class="check"><input type="checkbox" data-day-agreed="${safe(w.id)}" ${agreed ? 'checked' : ''}>Acuerdo confirmado</label></div></td></tr>`;
-  }).join('') || emptyRow(6,'Agrega trabajadores en Equipo y áreas para registrar una jornada.');
+    return `<tr><td><input type="checkbox" aria-label="${safe(w.name)} trabajó" data-present="${safe(w.id)}" ${shift ? 'checked' : ''}></td><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><input aria-label="Horas de ${safe(w.name)}" type="number" data-hours="${safe(w.id)}" min="0.5" max="24" step="0.5" value="${Number(shift?.hours || $('shiftHours').value || 8)}"></td><td><input aria-label="Participación porcentual de ${safe(w.name)}" type="number" data-day-percent="${safe(w.id)}" min="1" max="200" step="0.01" value="${participation}"></td><td><strong data-day-points="${safe(w.id)}" class="point-cell">—</strong></td><td class="money"><span data-day-estimate="${safe(w.id)}">—</span></td><td><div class="classic-participation-agreement"><input aria-label="Motivo del acuerdo para ${safe(w.name)}" data-day-note="${safe(w.id)}" maxlength="300" placeholder="Motivo para menos de 100%" value="${safe(note)}"><label class="check"><input type="checkbox" data-day-agreed="${safe(w.id)}" ${agreed ? 'checked' : ''}>Acuerdo confirmado</label></div></td></tr>`;
+  }).join('') || emptyRow(8,'Agrega trabajadores en Equipo y áreas para registrar una jornada.');
   renderAttendanceCount(); updatePermissions();
 }
 function renderAttendanceCount() {
@@ -469,8 +469,8 @@ function renderPayouts() {
   $('payouts').innerHTML = data.map(p => {
     const shift = shifts.find(s => s.day_id === p.day_id && s.worker_id === p.worker_id);
     const percentage = Number((Number(shift?.participation ?? 1) * 100).toFixed(2));
-    return `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td>${Number(p.hours)}</td><td>${percentage}%</td><td class="money">${clp(p.calculated_clp)}</td></tr>`;
-  }).join('') || emptyRow(5,'Registra una jornada o selecciona otra fecha para ver su reparto.');
+    return `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td>${Number(p.hours)}</td><td>${percentage}%</td><td>${Number((Number(p.hours)*Number(shift?.participation??1)/Number(day?.hours_per_shift||8)).toFixed(2)).toLocaleString('es-CL')}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`;
+  }).join('') || emptyRow(6,'Registra una jornada o selecciona otra fecha para ver su reparto.');
   $('editDay').disabled = !day;
 }
 function visibleHistory() {
@@ -1086,6 +1086,7 @@ bind('saveDay', async () => {
   if (!present.length || present.some(x => !Number.isFinite(x.hours) || x.hours <= 0 || x.hours > 24)) throw Error('Selecciona personal e ingresa horas válidas, entre 0,5 y 24.');
   if (present.some(x => x.participation === null || !Number.isFinite(x.participation) || x.participation < 0.01 || x.participation > 2)) throw Error('La participación de cada persona debe estar entre 1% y 200%.');
   if (present.some(x => x.note.length > 300 || x.participation !== 1 && (!x.agreed || x.note.length < 10))) throw Error('Una participación distinta de 100% requiere acuerdo confirmado y un motivo de al menos 10 caracteres.');
+  if (present.some(x => x.hours / hours_per_shift * x.participation > 2.000001)) throw Error('Máximo 2 puntos por persona en jornada completa. Si trabajó 16 horas y el turno base es de 8 horas, ya tiene 2 puntos al 100%: no sumes otro 200%.');
   const presentAreas = new Set(present.map(x => workers.find(w => w.id === x.worker_id)?.area_id));
   if (areas.some(a => Number(a.percentage) > 0 && !presentAreas.has(a.id))) throw Error('Cada área con porcentaje positivo necesita al menos una persona presente.');
   if (flexShifts.some(s => s.work_date === date)) throw Error('El ' + dateLabel(date) + ' ya tiene propinas AM/PM. Abre esa modalidad para revisar el reparto y evita duplicar los montos.');
