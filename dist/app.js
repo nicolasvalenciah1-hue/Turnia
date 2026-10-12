@@ -281,7 +281,7 @@ async function init() {
   $('profileRole').textContent = context.platform_admin ? 'MUTAVIA GROUP · Creador de Turnia' : roleLabel(currentRestaurant()?.role);
   renderAccountSettings();
   if (rid && currentRestaurant()?.role === 'owner') void loadRestaurantBusiness(rid);
-  $('avatar').textContent = name.split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase();
+  $('avatar').textContent = context.platform_admin ? 'M' : name.split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase();
   $('greeting').textContent = context.platform_admin ? 'Hola, Nicolás.' : 'Tu equipo. Cada turno.';
   $('todayLabel').textContent = new Date().toLocaleDateString('es-CL', {weekday:'long',day:'numeric',month:'long'});
   $('auth').classList.add('hide'); $('loading').classList.add('hide');
