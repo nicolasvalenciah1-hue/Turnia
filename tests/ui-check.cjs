@@ -6,11 +6,11 @@ const html = fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
-async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true}={}) {
+async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false}={}) {
   const dom = new JSDOM(html,{url:'https://turnia.test/',runScripts:'outside-only'}), w=dom.window, d=w.document;
   const calls=[]; let capturedBlob; const errors=[];
   w.addEventListener('error',e=>errors.push(e.error));
-  const user={id:'test-user',email:'owner@example.test'};
+  const user={id:'test-user',email:'owner@example.test',user_metadata: registered ? {turnia_registration:'v1'} : {}};
   let session=loggedIn?{user}:null;
   const context={display_name:'Nicolás Valencia',platform_admin:platform,can_create:platform||!restaurant,restaurants:restaurant?[{id:'r1',name:'Local uno',role},{id:'r2',name:'Local dos',role}]:[]};
   if(completed)w.localStorage.setItem('turnia_guide_v1_test-user',JSON.stringify({done:true,step:9}));
@@ -32,6 +32,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   },rpc:async(name,args)=>{
     calls.push([name,args]);
     if(name==='propina_account_context')return {data:context};
+    if(name==='turnia_registration_status')return {data:{status:'pending_payment',restaurant_name:'La Terraza'}};
     if(name==='propina_membership_context')return {data:[{restaurant_id:'r1',status:'active',payment_status:'trial',days_remaining:20,expires_at:'2026-11-01'}]};
     if(name==='propina_save_day'){
       data.propina_days.push({id:'d2',work_date:args.p_date,amount_clp:args.p_amount,hours_per_shift:args.p_shift_hours});
@@ -88,6 +89,13 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   c.authChange('PASSWORD_RECOVERY');assert(!c.d.querySelector('#recovery').classList.contains('hide'));
   c.d.querySelector('#newPassword').value='NewPass1234';c.d.querySelector('#confirmPassword').value='NewPass1234';c.d.querySelector('#savePassword').click();await flush();
   assert(c.calls.some(x=>x[0]==='updateUser'));assert(c.d.querySelector('#recovery').classList.contains('hide'));c.dom.window.close();
+  const pending=await app({platform:false,restaurant:false,registered:true});
+  assert(!pending.d.querySelector('#pendingRegistration').classList.contains('hide'),'Unpaid new customer sees pending screen');
+  assert(pending.d.querySelector('#app').classList.contains('hide'),'Unpaid customer cannot enter panel');
+  assert.match(pending.d.querySelector('#pendingNotice').textContent,/pendiente de pago/);
+  pending.d.querySelector('#pendingLogout').click();await flush();
+  assert(!pending.d.querySelector('#auth').classList.contains('hide'),'Unpaid customer can log out');
+  pending.dom.window.close();
   const d=await app({loggedIn:false});assert(!d.d.querySelector('#auth').classList.contains('hide'));assert(d.d.querySelector('#app').classList.contains('hide'));
   d.d.querySelector('#register').click();await flush();assert(!d.d.querySelector('#inviteBox').classList.contains('hide'));d.dom.window.close();
   console.log('PASS: navigation, account name, role controls, save payload, restaurant isolation, history filter, CSV safety, onboarding, recovery and signed-out state. No production writes.');
