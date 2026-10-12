@@ -66,7 +66,7 @@
     if (sending) return;
     sending = true; submit.disabled = true; showMessage('Creando cuenta segura en Supabase…');
     const data = {
-      turnia_registration:'v1',
+      turnia_registration:'v1',turnia_test_token:val('testToken'),
       first_name:val('firstName'), last_name:val('lastName'), phone:val('phone'),
       display_name:val('firstName')+' '+val('lastName'),
       restaurant_name:val('restaurantName'), business_type:val('businessType'),
