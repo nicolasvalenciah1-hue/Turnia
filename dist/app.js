@@ -68,10 +68,13 @@ async function guard(fn, button) {
   if (button?.disabled || busyButtons.has(button)) return;
   if (button) { busyButtons.add(button); button.disabled = true; }
   const settingsAction = ['saveAccountProfile','changeAccountPassword','saveRestaurantDetails'].includes(button?.id);
+  const savingClassic = button?.id === 'saveDay';
+  if (savingClassic) { $('daySaveStatus').textContent = ''; $('daySaveStatus').className = 'state-text'; }
   if (settingsAction) { $('settingsStatus').textContent = ''; $('settingsStatus').classList.add('hide'); }
   msg();
   try { await fn(); } catch (e) {
     if (settingsAction) setSettingsStatus(errorText(e), 'error');
+    if (savingClassic) { $('daySaveStatus').textContent = 'No se guardó la jornada: ' + errorText(e); $('daySaveStatus').className = 'notice error spaced'; }
     msg(errorText(e), 'error');
   }
   finally { if (button) { busyButtons.delete(button); button.disabled = false; } updatePermissions(); }
@@ -430,7 +433,7 @@ function renderDay() {
   const current = days.find(d => d.work_date === $('date').value);
   $('amount').value = current ? current.amount_clp : '';
   $('shiftHours').value = current?.hours_per_shift || $('shiftHours').value || 8;
-  $('dayState').textContent = current ? 'Jornada guardada' : 'Nueva jornada';
+  $('dayState').textContent = current ? 'Jornada guardada' : flexShifts.some(s=>s.work_date===$('date').value) ? 'Fecha usada en AM/PM' : 'Nueva jornada';
   $('attendance').innerHTML = workers.filter(w => w.active || current && shifts.some(s => s.day_id === current.id && s.worker_id === w.id)).map(w => {
     const shift = current ? shifts.find(s => s.day_id === current.id && s.worker_id === w.id) : null;
     return `<tr><td><input type="checkbox" aria-label="${safe(w.name)} trabajó" data-present="${safe(w.id)}" ${shift ? 'checked' : ''}></td><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><input aria-label="Horas de ${safe(w.name)}" type="number" data-hours="${safe(w.id)}" min="0.5" max="24" step="0.5" value="${Number(shift?.hours || $('shiftHours').value || 8)}"></td></tr>`;
@@ -450,15 +453,27 @@ function renderPayouts() {
   $('payouts').innerHTML = data.map(p => `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td>${Number(p.hours)}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(4,'Registra una jornada o selecciona otra fecha para ver su reparto.');
   $('editDay').disabled = !day;
 }
-function visibleDays() {
+function visibleHistory() {
   const from = $('historyFrom').value, to = $('historyTo').value;
-  return days.filter(d => (!from || d.work_date >= from) && (!to || d.work_date <= to));
+  const all = [
+    ...days.map(d => ({kind:'classic',date:d.work_date,amount:Number(d.amount_clp),day:d})),
+    ...flexShifts.map(s => ({kind:'flex',date:s.work_date,amount:Number(s.amount_clp),shift:s.shift_code}))
+  ];
+  return all.filter(d => (!from || d.date >= from) && (!to || d.date <= to))
+    .sort((a,b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind) || String(a.shift||'').localeCompare(String(b.shift||'')));
 }
 function renderHistory() {
-  const data = visibleDays();
-  $('historyRows').innerHTML = data.map(d => `<tr><td>${safe(dateLabel(d.work_date))}</td><td class="money">${clp(d.amount_clp)}</td><td class="money">${clp(payouts.filter(p => p.day_id === d.id).reduce((n,p) => n + Number(p.calculated_clp),0))}</td><td><button class="ghost small" data-open-date="${safe(d.work_date)}">Ver reparto →</button></td></tr>`).join('') || emptyRow(4,'No hay jornadas registradas en este período.');
+  const data = visibleHistory();
+  $('historyRows').innerHTML = data.map(d => {
+    const flexible = d.kind === 'flex';
+    const distributed = flexible ? '—' : clp(payouts.filter(p => p.day_id === d.day.id).reduce((n,p) => n + Number(p.calculated_clp),0));
+    const detail = flexible
+      ? `data-open-flex-date="${safe(d.date)}" data-open-flex-code="${safe(d.shift)}"`
+      : `data-open-date="${safe(d.date)}"`;
+    return `<tr><td>${safe(dateLabel(d.date))}</td><td>${flexible?'Turno '+safe(d.shift):'Jornada completa'}</td><td class="money">${clp(d.amount)}</td><td class="money">${distributed}</td><td><button class="ghost small" ${detail}>Ver reparto →</button></td></tr>`;
+  }).join('') || emptyRow(5,'No hay registros de propinas en este período.');
   const invalid = $('historyFrom').value && $('historyTo').value && $('historyFrom').value > $('historyTo').value;
-  $('historySummary').textContent = invalid ? 'La fecha inicial debe ser anterior a la fecha final.' : `${data.length} jornada(s) · ${clp(data.reduce((n,d) => n + Number(d.amount_clp),0))} en propinas`;
+  $('historySummary').textContent = invalid ? 'La fecha inicial debe ser anterior a la fecha final.' : `${data.length} registro(s) · ${clp(data.reduce((n,d) => n + d.amount,0))} en propinas. En AM/PM el reparto se calcula conjuntamente por día.`;
   $('export').disabled = !data.length;
 }
 function renderHome() {
@@ -943,13 +958,19 @@ bind('saveDay', async () => {
   if (!present.length || present.some(x => !Number.isFinite(x.hours) || x.hours <= 0 || x.hours > 24)) throw Error('Selecciona personal e ingresa horas válidas, entre 0,5 y 24.');
   const presentAreas = new Set(present.map(x => workers.find(w => w.id === x.worker_id)?.area_id));
   if (areas.some(a => Number(a.percentage) > 0 && !presentAreas.has(a.id))) throw Error('Cada área con porcentaje positivo necesita al menos una persona presente.');
+  if (flexShifts.some(s => s.work_date === date)) throw Error('El ' + dateLabel(date) + ' ya tiene propinas AM/PM. Abre esa modalidad para revisar el reparto y evita duplicar los montos.');
   if (days.some(d => d.work_date === date) && !window.confirm('Ya existe una jornada para esta fecha. ¿Guardar estos cambios y recalcular su reparto?')) return;
   await call('propina_save_day',{p_restaurant:rid,p_date:date,p_amount:amount,p_shift_hours:hours_per_shift,p_workers:present});
-  $('payoutDate').value = date; await load(); setTab('distribution'); msg('Jornada guardada y reparto calculado.','success');
+  $('payoutDate').value = date; await load();
+  const stored = days.find(d=>d.work_date===date);
+  if (!stored || Number(stored.amount_clp)!==amount) throw Error('La base de datos no confirmó el monto de la jornada. Revisa el historial antes de intentarlo de nuevo.');
+  $('daySaveStatus').textContent = 'Jornada del '+dateLabel(date)+' guardada correctamente por '+clp(amount)+'.';
+  $('daySaveStatus').className = 'notice success spaced';
+  setTab('distribution'); msg('Jornada del '+dateLabel(date)+' guardada: '+clp(amount)+'. Reparto calculado.','success');
 });
 function openPayout(e) {
   const flexible=e.target.closest('[data-open-flex-date]');
-  if(flexible){$('flexDate').value=flexible.dataset.openFlexDate;renderFlex();setTab('flex');return;}
+  if(flexible){$('flexDate').value=flexible.dataset.openFlexDate;if(flexible.dataset.openFlexCode)$('flexShiftCode').value=flexible.dataset.openFlexCode;renderFlex();setTab('flex');return;}
   const el = e.target.closest('[data-open-date]'); if (!el) return;
   $('payoutDate').value = el.dataset.openDate; renderPayouts(); setTab('distribution');
 }
@@ -962,10 +983,13 @@ function csvCell(value) {
   return '"' + (/^[\s]*[=+@-]/.test(text) ? "'" + text : text).replace(/"/g,'""') + '"';
 }
 bind('export', async () => {
-  const ids = new Set(visibleDays().map(d => d.id));
-  const data = payouts.filter(p => ids.has(p.day_id)).sort((a,b) => a.work_date.localeCompare(b.work_date));
+  const visible = visibleHistory(), ids = new Set(visible.filter(x=>x.kind==='classic').map(x=>x.day.id));
+  const flexDates = new Set(visible.filter(x=>x.kind==='flex').map(x=>x.date));
+  const classic = payouts.filter(p => ids.has(p.day_id)).map(p => [p.work_date,currentRestaurant()?.name || '','Jornada completa',p.worker_name,p.area_name,p.hours,p.percentage,p.calculated_clp]);
+  const flexible = flexPayouts.filter(p => flexDates.has(p.work_date)).map(p => [p.work_date,currentRestaurant()?.name || '',p.group_code==='DIA'?'Fondo diario':'Turno '+p.group_code,p.worker_name,p.area_name,p.weight,'',p.calculated_clp]);
+  const data = [...classic,...flexible].sort((a,b)=>a[0].localeCompare(b[0]));
   if (!data.length) throw Error('No hay repartos para exportar en este período.');
-  const rows = [['Fecha','Restaurante','Trabajador','Área','Horas','Porcentaje área','Propina CLP'],...data.map(p => [p.work_date,currentRestaurant()?.name || '',p.worker_name,p.area_name,p.hours,p.percentage,p.calculated_clp])];
+  const rows = [['Fecha','Restaurante','Modalidad','Trabajador','Área','Horas/Partes','Porcentaje área','Propina CLP'],...data];
   const csv = '\ufeff' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})), link = document.createElement('a');
   link.href = url; link.download = `turnia_propinas_${today()}.csv`; document.body.append(link); link.click(); link.remove();
