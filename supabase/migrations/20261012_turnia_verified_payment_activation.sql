@@ -30,7 +30,7 @@ DECLARE
   restaurant uuid;
 BEGIN
   -- Service role only. Frontend and authenticated users cannot invoke this.
-  IF current_user <> 'service_role' THEN
+  IF COALESCE(auth.role(),'') <> 'service_role' THEN
     RAISE EXCEPTION 'Acceso restringido al verificador de pagos.' USING errcode='42501';
   END IF;
   SELECT * INTO flags FROM propina_private.turnia_runtime_flags WHERE id=1;
