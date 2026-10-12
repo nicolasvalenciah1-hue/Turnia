@@ -455,25 +455,40 @@ function renderPayouts() {
 }
 function visibleHistory() {
   const from = $('historyFrom').value, to = $('historyTo').value;
-  const all = [
-    ...days.map(d => ({kind:'classic',date:d.work_date,amount:Number(d.amount_clp),day:d})),
-    ...flexShifts.map(s => ({kind:'flex',date:s.work_date,amount:Number(s.amount_clp),shift:s.shift_code}))
-  ];
-  return all.filter(d => (!from || d.date >= from) && (!to || d.date <= to))
-    .sort((a,b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind) || String(a.shift||'').localeCompare(String(b.shift||'')));
+  // One history row per calendar date, regardless of how many shifts were saved.
+  // Keep the underlying shift records untouched for the detailed breakdown.
+  const grouped = new Map();
+  const dayFor = date => {
+    if (!grouped.has(date)) grouped.set(date, {date,amount:0,day:null,flexShifts:[]});
+    return grouped.get(date);
+  };
+  days.forEach(d => {
+    const record = dayFor(d.work_date);
+    record.day = d;
+    record.amount += Number(d.amount_clp);
+  });
+  flexShifts.forEach(s => {
+    const record = dayFor(s.work_date);
+    record.flexShifts.push(s);
+    record.amount += Number(s.amount_clp);
+  });
+  return [...grouped.values()].filter(d => (!from || d.date >= from) && (!to || d.date <= to))
+    .sort((a,b) => b.date.localeCompare(a.date));
 }
 function renderHistory() {
   const data = visibleHistory();
   $('historyRows').innerHTML = data.map(d => {
-    const flexible = d.kind === 'flex';
-    const distributed = flexible ? '—' : clp(payouts.filter(p => p.day_id === d.day.id).reduce((n,p) => n + Number(p.calculated_clp),0));
+    const flexible = d.flexShifts.length > 0;
+    const classicDistributed = d.day ? payouts.filter(p => p.day_id === d.day.id).reduce((n,p) => n + Number(p.calculated_clp),0) : 0;
+    const flexDistributed = flexible ? flexPayouts.filter(p => p.work_date === d.date).reduce((n,p) => n + Number(p.calculated_clp),0) : 0;
+    const modality = flexible && d.day ? 'Revisar modalidades' : flexible ? 'Por turnos' : 'Jornada completa';
     const detail = flexible
-      ? `data-open-flex-date="${safe(d.date)}" data-open-flex-code="${safe(d.shift)}"`
+      ? `data-open-flex-date="${safe(d.date)}"`
       : `data-open-date="${safe(d.date)}"`;
-    return `<tr><td>${safe(dateLabel(d.date))}</td><td>${flexible?'Turno '+safe(d.shift):'Jornada completa'}</td><td class="money">${clp(d.amount)}</td><td class="money">${distributed}</td><td><button class="ghost small" ${detail}>Ver reparto →</button></td></tr>`;
+    return `<tr><td>${safe(dateLabel(d.date))}</td><td>${modality}</td><td class="money">${clp(d.amount)}</td><td class="money">${clp(classicDistributed+flexDistributed)}</td><td><button class="ghost small" ${detail}>Ver reparto →</button></td></tr>`;
   }).join('') || emptyRow(5,'No hay registros de propinas en este período.');
   const invalid = $('historyFrom').value && $('historyTo').value && $('historyFrom').value > $('historyTo').value;
-  $('historySummary').textContent = invalid ? 'La fecha inicial debe ser anterior a la fecha final.' : `${data.length} registro(s) · ${clp(data.reduce((n,d) => n + d.amount,0))} en propinas. En AM/PM el reparto se calcula conjuntamente por día.`;
+  $('historySummary').textContent = invalid ? 'La fecha inicial debe ser anterior a la fecha final.' : `${data.length} día(s) registrado(s) · ${clp(data.reduce((n,d) => n + d.amount,0))} en propinas. Cada día aparece una sola vez; abre el reparto para ver el detalle.`;
   $('export').disabled = !data.length;
 }
 function renderHome() {
@@ -489,7 +504,7 @@ function renderHome() {
   flexShifts.forEach(s=>byDate.set(s.work_date,(byDate.get(s.work_date)||0)+Number(s.amount_clp)));
   byDate.forEach((amount,date)=>recent.push({date,amount,flex:true}));
   recent.sort((a,b)=>b.date.localeCompare(a.date));
-  $('recentDays').innerHTML=recent.slice(0,4).map(d=>'<tr><td>'+safe(dateLabel(d.date))+(d.flex?' · AM/PM':'')+'</td><td class="money">'+clp(d.amount)+'</td><td><button class="ghost small" '+(d.flex?'data-open-flex-date':'data-open-date')+'="'+safe(d.date)+'" aria-label="Ver reparto">→</button></td></tr>').join('')||emptyRow(3,'<strong>Tu próxima jornada empieza aquí</strong>Cuando guardes un día, lo encontrarás en este espacio.');
+  $('recentDays').innerHTML=recent.slice(0,4).map(d=>'<tr><td>'+safe(dateLabel(d.date))+(d.flex?' · Por turnos':'')+'</td><td class="money">'+clp(d.amount)+'</td><td><button class="ghost small" '+(d.flex?'data-open-flex-date':'data-open-date')+'="'+safe(d.date)+'" aria-label="Ver reparto">→</button></td></tr>').join('')||emptyRow(3,'<strong>Tu próxima jornada empieza aquí</strong>Cuando guardes un día, lo encontrarás en este espacio.');
 }
 function renderMembershipCard(item) {
   if (!item) { $('membershipCard').innerHTML = '<h2>Membresía del restaurante</h2><p class="muted">' + (rid ? 'No hay información de membresía disponible para este local.' : 'Selecciona o crea un restaurante para consultar su acceso.') + '</p><span class="badge gray">Cobros desactivados</span>'; return; }
@@ -983,8 +998,8 @@ function csvCell(value) {
   return '"' + (/^[\s]*[=+@-]/.test(text) ? "'" + text : text).replace(/"/g,'""') + '"';
 }
 bind('export', async () => {
-  const visible = visibleHistory(), ids = new Set(visible.filter(x=>x.kind==='classic').map(x=>x.day.id));
-  const flexDates = new Set(visible.filter(x=>x.kind==='flex').map(x=>x.date));
+  const visible = visibleHistory(), ids = new Set(visible.filter(x=>x.day).map(x=>x.day.id));
+  const flexDates = new Set(visible.filter(x=>x.flexShifts.length).map(x=>x.date));
   const classic = payouts.filter(p => ids.has(p.day_id)).map(p => [p.work_date,currentRestaurant()?.name || '','Jornada completa',p.worker_name,p.area_name,p.hours,p.percentage,p.calculated_clp]);
   const flexible = flexPayouts.filter(p => flexDates.has(p.work_date)).map(p => [p.work_date,currentRestaurant()?.name || '',p.group_code==='DIA'?'Fondo diario':'Turno '+p.group_code,p.worker_name,p.area_name,p.weight,'',p.calculated_clp]);
   const data = [...classic,...flexible].sort((a,b)=>a[0].localeCompare(b[0]));
