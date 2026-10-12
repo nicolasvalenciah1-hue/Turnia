@@ -7,6 +7,10 @@ const html=fs.readFileSync(__dirname+'/../dist/registro.html','utf8');
 const js=fs.readFileSync(__dirname+'/../dist/registro.js','utf8');
 const migration=fs.readFileSync(__dirname+'/../supabase/migrations/20261012_turnia_self_registration.sql','utf8');
 const activation=fs.readFileSync(__dirname+'/../supabase/migrations/20261012_turnia_verified_payment_activation.sql','utf8');
+const checkout=fs.readFileSync(__dirname+'/../supabase/functions/turnia-sandbox-checkout/index.ts','utf8');
+const webhook=fs.readFileSync(__dirname+'/../supabase/functions/turnia-sandbox-webhook/index.ts','utf8');
+const checkoutMigration=fs.readFileSync(__dirname+'/../supabase/migrations/20261012_turnia_checkout_tracking.sql','utf8');
+const wrapperMigration=fs.readFileSync(__dirname+'/../supabase/migrations/20261012_turnia_backend_rpc_wrappers.sql','utf8');
 const entry=fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 
 assert(entry.includes('href="registro.html"'),'Signup linked from login');
@@ -26,6 +30,18 @@ assert(activation.includes("COALESCE(auth.role(),'') <> 'service_role'"),'Activa
 assert(activation.includes("signup.status <> 'pending_payment'"),'Only pending accounts can be activated');
 assert(activation.includes('IF verified.applied_at IS NOT NULL'),'Duplicate payments cannot create another restaurant');
 assert(!activation.includes('GRANT EXECUTE ON FUNCTION propina_private.activate_verified_registration(text) TO authenticated'),'Customers cannot activate themselves');
+assert(migration.includes('sandbox_checkout_enabled boolean NOT NULL DEFAULT FALSE'),'Checkout disabled by default');
+assert(checkout.includes('turnia_prepare_sandbox_checkout'),'Checkout must use verified server RPC');
+assert(checkout.includes('seller.email'),'Test seller is required');
+assert(checkout.includes('sandbox_init_point'),'Sandbox URL exposed only after provider response');
+assert(webhook.includes('crypto.subtle.verify'),'Webhook verifies HMAC');
+assert(webhook.includes('payment.live_mode!==false'),'Webhook rejects live payments');
+assert(webhook.includes('payment.status!=="approved"'),'Webhook requires approved payment');
+assert(webhook.includes('subscription.external_reference'),'Webhook ties payment to registered checkout reference');
+assert(webhook.includes('turnia_complete_sandbox_payment'),'Webhook uses server-only RPC');
+assert(checkoutMigration.includes('external_reference text NOT NULL UNIQUE'),'Unique attempts');
+assert(wrapperMigration.includes("TO service_role"),'Only service can call payment RPC');
+
 
 const dom=new JSDOM(html,{url:'https://turnia.test/registro.html',runScripts:'outside-only'});
 const w=dom.window,d=w.document;
