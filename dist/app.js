@@ -340,6 +340,8 @@ bind('inspectSubscription', async () => {
       'Vendedor de prueba: '+yesNo(result.seller_is_test),
       'Comprador de prueba: '+yesNo(result.buyer_is_test),
       'Identificador de comprador disponible: '+yesNo(result.payer_id_returned),
+      'Comprador autorizado configurado: '+yesNo(result.trusted_buyer_id_configured),
+      'Identificador coincide: '+yesNo(result.trusted_buyer_id_matches),
       'Monto y moneda correctos: '+yesNo(result.amount_and_currency_match),
       'Orden vinculada a Turnia: '+yesNo(result.reference_matches),
       'Entorno: '+environment,
