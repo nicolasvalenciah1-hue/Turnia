@@ -6,12 +6,12 @@ const html = fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
-async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false}={}) {
+async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, initialPassword='OldPassword123', rpcOverrides={}, authOverrides={}}={}) {
   const dom = new JSDOM(html,{url:'https://turnia.test/',runScripts:'outside-only'}), w=dom.window, d=w.document;
   const calls=[]; let capturedBlob; const errors=[];
   w.addEventListener('error',e=>errors.push(e.error));
   const user={id:'test-user',email:'owner@example.test',user_metadata:registered?{turnia_registration:'v1'}:{}};
-  let session=loggedIn?{user}:null;
+  let session=loggedIn?{user}:null, storedPassword=initialPassword;
   const context={display_name:'Nicolás Valencia',platform_admin:platform,can_create:platform||!restaurant,restaurants:restaurant?[{id:'r1',name:'Local uno',role},{id:'r2',name:'Local dos',role}]:[]};
   if(completed)w.localStorage.setItem('turnia_guide_v1_test-user',JSON.stringify({done:true,step:9}));
   const data={
@@ -25,12 +25,13 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const sb={auth:{
     getSession:async()=>({data:{session}}),
     onAuthStateChange:fn=>{authChange=fn;},
-    signInWithPassword:async args=>{calls.push(['signInWithPassword',args]);session={user};return {data:{session}};},
-    signOut:async()=>{session=null;authChange('SIGNED_OUT');return {data:{}};},
+    signInWithPassword:async args=>{calls.push(['signInWithPassword',args]);if(authOverrides.signInWithPassword)return authOverrides.signInWithPassword(args);if(args.password!==storedPassword)return {error:{message:'Invalid login credentials'}};session={user};return {data:{session}};},
+    signOut:async args=>{calls.push(['signOut',args]);session=null;authChange('SIGNED_OUT');return {data:{}};},
     signUp:async args=>{calls.push(['signup',args]);return {data:{}};},
-    resend:async args=>{calls.push(['resend',args]);return {data:{}};},resetPasswordForEmail:async()=>({data:{}}),updateUser:async args=>{calls.push(['updateUser',args]);if(args.data){user.user_metadata={...user.user_metadata,...args.data};context.display_name=args.data.display_name||context.display_name;}return {data:{user}};}
+    resend:async args=>{calls.push(['resend',args]);return {data:{}};},resetPasswordForEmail:async()=>({data:{}}),updateUser:async args=>{calls.push(['updateUser',args]);if(authOverrides.updateUser)return authOverrides.updateUser(args);if(args.password)storedPassword=args.password;if(args.data){user.user_metadata={...user.user_metadata,...args.data};context.display_name=args.data.display_name||context.display_name;}return {data:{user}};}
   },rpc:async(name,args)=>{
     calls.push([name,args]);
+    if(rpcOverrides[name])return rpcOverrides[name](args);
     if(name==='propina_account_context')return {data:context};
     if(name==='propina_update_restaurant_name'){const r=context.restaurants.find(r=>r.id===args.p_restaurant_id);if(r)r.name=args.p_name;return {data:{id:args.p_restaurant_id,name:args.p_name}};}
     if(name==='turnia_registration_status')return {data:{status:'pending_payment',restaurant_name:'Restaurante de prueba'}};
@@ -42,22 +43,23 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     }
     return {data:{}};
   },from:name=>({select:()=>({eq:async(k,id)=>{calls.push(['query',name,id]);return {data:id==='r1'?structuredClone(data[name]):[]};}})})};
+  w.TextEncoder = TextEncoder;
   w.supabase={createClient:()=>sb};
   w.confirm=()=>true; w.URL.createObjectURL=blob=>{capturedBlob=blob;return 'blob:mock';};w.URL.revokeObjectURL=()=>{};
   w.HTMLAnchorElement.prototype.click=function(){};
   w.eval(code); await flush();
-  return {w,d,calls,errors,dom,authChange,blob:()=>capturedBlob};
+  return {w,d,calls,errors,dom,authChange,sb,user,context,blob:()=>capturedBlob};
 }
-(async()=>{
+if (require.main === module) (async()=>{
   const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]); assert.equal(new Set(ids).size,ids.length,'Unique HTML IDs');
   assert(!code.includes('mercadopago-create-subscription')); assert(!code.includes('propina_renew_membership'),'No self-renewal or charging path');
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=account-settings-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=account-settings-20261012-1'),'App asset is versioned');
+  assert(html.includes('styles.css?v=account-admin-20261012-2'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=account-admin-20261012-2'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
-  assert(sw.includes('turnia-shell-v3'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v4'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
   // Personal settings can be used by every logged-in user.
   a.d.querySelector('[data-tab="access"]').click();
@@ -150,3 +152,5 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   d.d.querySelector('#register').click();await flush();assert(!d.d.querySelector('#inviteBox').classList.contains('hide'));d.dom.window.close();
   console.log('PASS: navigation, account name, role controls, save payload, restaurant isolation, history filter, CSV safety, onboarding, recovery and signed-out state. No production writes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+module.exports = {app, flush};

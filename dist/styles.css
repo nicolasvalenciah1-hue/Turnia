@@ -41,3 +41,5 @@
 #settingsStatus{margin-bottom:22px}
 @media(max-width:1000px){.settings-columns{grid-template-columns:1fr}}
 @media(max-width:600px){.settings-columns{gap:0}.settings-panel{padding:20px}#restaurantDetailsPanel .grid.two{grid-template-columns:1fr}}
+
+#teamAccessPanel td,#platformOverview td{vertical-align:top} #platformOverview td:first-child{min-width:190px} #platformOverview td:last-child{min-width:230px} #teamAccessPanel select{min-width:160px} #teamAccessPanel small.state-text,#platformOverview small.state-text{display:block;overflow-wrap:anywhere}

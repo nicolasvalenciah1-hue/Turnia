@@ -22,6 +22,9 @@ const sb = window.supabase.createClient(SUPABASE_URL, 'sb_publishable_uT_FeTqwfX
 let context = null, user = null, rid = '', areas = [], workers = [], days = [], shifts = [], payouts = [];
 let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = false;
 let guideIndex = 0, guideDone = false;
+let authVersion = 0, teamVersion = 0, platformVersion = 0;
+let teamMembers = [], teamInvitations = [], platformRestaurants = [], platformInvitations = [];
+const busyButtons = new Set();
 const clp = n => new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP', maximumFractionDigits:0}).format(Number(n) || 0);
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
 const dateLabel = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('es-CL', {day:'2-digit',month:'short',year:'numeric'}) : '—';
@@ -33,6 +36,7 @@ const query = async (table, restaurantId) => check(await sb.from(table).select('
 const currentRestaurant = () => context?.restaurants?.find(r => r.id === rid);
 const canEdit = () => !!rid && !!context && (context.platform_admin || ['owner','admin'].includes(currentRestaurant()?.role));
 const canInvite = () => !!rid && !!context && (context.platform_admin || currentRestaurant()?.role === 'owner');
+const canManageTeam = () => !!rid && currentRestaurant()?.role === 'owner';
 const roleLabel = role => ({owner:'Propietario del local',admin:'Administrador del local',viewer:'Solo consulta'}[role] || 'Cliente');
 const titles = {home:'Inicio',daily:'Registrar día',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',guide:'Guía de uso'};
 function msg(text = '', tone = 'info') {
@@ -43,6 +47,9 @@ function msg(text = '', tone = 'info') {
 function errorText(e) {
   const message = e?.message || String(e);
   if (/Invalid login credentials/i.test(message)) return 'El correo o la contraseña no coinciden. Revísalos e inténtalo de nuevo.';
+  if (/same_password/i.test(e?.code || '') || /different from the old/i.test(message)) return 'La nueva contraseña debe ser diferente de la actual.';
+  if (/weak_password/i.test(e?.code || '')) return 'La contraseña no cumple los requisitos de seguridad. Usa una más larga con letras, números y símbolos.';
+  if (/reauthentication_needed|reauthentication_not_valid/i.test(e?.code || '')) return 'Vuelve a iniciar sesión y repite el cambio de contraseña.';
   if (/Email not confirmed/i.test(message)) return 'Confirma tu correo antes de iniciar sesión.';
   if (/rate limit exceeded|over_email_send_rate_limit|429/i.test(message)) return 'Supabase alcanzó el límite temporal de correos. Espera antes de solicitar otro enlace y revisa tu bandeja de entrada.';
   if (/Email link is invalid|token expired/i.test(message)) return 'El enlace de confirmación ya no es válido. Solicita uno nuevo.';
@@ -50,11 +57,16 @@ function errorText(e) {
   return message;
 }
 async function guard(fn, button) {
-  if (button?.disabled) return;
-  if (button) button.disabled = true;
+  if (button?.disabled || busyButtons.has(button)) return;
+  if (button) { busyButtons.add(button); button.disabled = true; }
+  const settingsAction = ['saveAccountProfile','changeAccountPassword','saveRestaurantDetails'].includes(button?.id);
+  if (settingsAction) { $('settingsStatus').textContent = ''; $('settingsStatus').classList.add('hide'); }
   msg();
-  try { await fn(); } catch (e) { msg(errorText(e), 'error'); }
-  finally { if (button) button.disabled = false; updatePermissions(); }
+  try { await fn(); } catch (e) {
+    if (settingsAction) setSettingsStatus(errorText(e), 'error');
+    msg(errorText(e), 'error');
+  }
+  finally { if (button) { busyButtons.delete(button); button.disabled = false; } updatePermissions(); }
 }
 function bind(id, fn) { $(id).addEventListener('click', () => guard(fn, $(id))); }
 function requireEdit() { if (!canEdit() || loadingData) throw Error('Selecciona un restaurante autorizado para realizar cambios.'); }
@@ -76,6 +88,8 @@ function setTab(name) {
   closeDrawer();
   if (name === 'guide') renderGuide();
   if (name === 'distribution') renderPayouts();
+  if (name === 'access') void loadTeam();
+  if (name === 'owner') void loadPlatform();
 }
 function updatePermissions() {
   const editing = canEdit() && !loadingData;
@@ -83,6 +97,7 @@ function updatePermissions() {
   ['saveDay','addArea','addWorker','amount','shiftHours'].forEach(id => $(id).disabled = !editing);
   $('createRestaurantPanel').classList.toggle('hide', !context?.can_create);
   $('staffInvitePanel').classList.toggle('hide', !canInvite());
+  $('teamAccessPanel').classList.toggle('hide', !canManageTeam());
   $('ownerNav').classList.toggle('hide', !context?.platform_admin);
   $('adminPanel').classList.toggle('hide', !context?.platform_admin);
   const restaurantOwner = !!rid && currentRestaurant()?.role === 'owner';
@@ -93,6 +108,7 @@ function updatePermissions() {
     ? 'Puedes actualizar el nombre de este local sin modificar las jornadas ni las propinas.'
     : 'Solo el propietario de este restaurante puede cambiar su nombre.';
   document.querySelectorAll('[data-present],[data-hours],[data-pct],[data-update-area],[data-toggle-worker]').forEach(el => el.disabled = !editing);
+  busyButtons.forEach(button => { button.disabled = true; });
 }
 function renderAccountSettings() {
   if (!user || !context) return;
@@ -113,16 +129,22 @@ function resetData() {
   $('inviteResult').textContent = ''; $('staffInviteResult').textContent = '';
   $('historyFrom').value = ''; $('historyTo').value = '';
   render(); renderMembershipCard(null);
+  teamVersion++; teamMembers = []; teamInvitations = [];
+  $('teamMembers').innerHTML = ''; $('teamInvitations').innerHTML = ''; $('teamStatus').textContent = '';
 }
 async function init() {
+  const version = ++authVersion;
   const result = check(await sb.auth.getSession());
+  if (version !== authVersion) return;
   user = result.session?.user || null;
   if (!user) {
     context = null; rid = ''; loadVersion++; resetData();
     $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('sandboxCheckoutPanel').classList.add('hide'); $('auth').classList.remove('hide'); $('loading').classList.add('hide');
     return;
   }
-  context = await call('propina_account_context');
+  const nextContext = await call('propina_account_context');
+  if (version !== authVersion) return;
+  context = nextContext;
   // A newly registered customer never enters the operations dashboard unless
   // the server has granted restaurant access after validating the payment.
   // User metadata is only a UX hint; actual authorization stays in Supabase RLS.
@@ -131,6 +153,7 @@ async function init() {
     try { registration = await call('turnia_registration_status'); } catch {
       // Fail closed even if the status endpoint is unavailable.
     }
+    if (version !== authVersion) return;
     $('pendingRestaurant').textContent = registration?.restaurant_name || 'Tu restaurante';
     $('pendingNotice').textContent = registration?.status === 'cancelled'
       ? 'Este registro fue cancelado. Contacta con soporte.'
@@ -143,7 +166,7 @@ async function init() {
     // Availability is display-only; the checkout backend repeats all checks.
     if (registration?.status === 'pending_payment') {
       try {
-        if (await call('turnia_sandbox_checkout_available') === true)
+        if (await call('turnia_sandbox_checkout_available') === true && version === authVersion)
           $('sandboxCheckoutPanel').classList.remove('hide');
       } catch {
         // If the gate cannot be verified, keep payment controls hidden.
@@ -169,6 +192,8 @@ async function init() {
   updatePermissions();
   readGuideProgress();
   if (rid) await load(); else resetData();
+  if (version !== authVersion) return;
+  if (tab === 'access') void loadTeam();
   if (!rid) {
     setTab('access');
     msg(context.can_create ? 'Tu acceso está aprobado. Crea tu restaurante para comenzar.' : 'Activa tu código de invitación para entrar al restaurante autorizado.');
@@ -262,6 +287,101 @@ async function loadMembershipContext(version = loadVersion, restaurantId = rid) 
     $('membershipCard').innerHTML = '<h2>Membresía</h2><p class="muted">No se pudo consultar el estado de tu membresía. Vuelve a seleccionar el restaurante para reintentar.</p><span class="badge gray">Cobros desactivados</span>';
   }
 }
+function invitationState(item) {
+  if (item.revoked_at) return 'Revocada';
+  if (item.used_at) return 'Activada';
+  if (new Date(item.expires_at).getTime() <= Date.now()) return 'Vencida';
+  return 'Pendiente';
+}
+function invitationRows(items, platform = false) {
+  return items.map((item, index) => {
+    const state = invitationState(item);
+    const role = item.role === 'restaurant_owner' ? 'Crear restaurante' : roleLabel(item.role);
+    return `<tr><td>${safe(item.email)}</td><td>${safe(role)}</td><td><span class="badge ${state === 'Pendiente' ? 'gold' : 'gray'}">${state}</span><small class="state-text">Vence: ${safe(new Date(item.expires_at).toLocaleDateString('es-CL'))}</small></td><td>${state === 'Pendiente' ? `<button class="ghost small" data-${platform ? 'platform' : 'team'}-revoke="${index}">Revocar</button>` : '—'}</td></tr>`;
+  }).join('') || emptyRow(4,'Todavía no hay invitaciones.');
+}
+async function loadTeam() {
+  const version = ++teamVersion, selected = rid;
+  if (!canManageTeam()) return;
+  $('teamStatus').textContent = 'Consultando accesos…';
+  $('teamMembers').innerHTML = ''; $('teamInvitations').innerHTML = '';
+  teamMembers = []; teamInvitations = [];
+  try {
+    const result = await call('propina_restaurant_team', {rid:selected});
+    if (version !== teamVersion || selected !== rid || !canManageTeam()) return;
+    teamMembers = result.members || []; teamInvitations = result.invitations || [];
+    $('teamMembers').innerHTML = teamMembers.map((member, index) => `<tr><td>${safe(member.email)}</td><td><select data-member-role="${index}" aria-label="Permiso de ${safe(member.email)}"><option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrar el local</option><option value="viewer" ${member.role === 'viewer' ? 'selected' : ''}>Solo consultar</option></select></td><td><button class="secondary small" data-member-save="${index}">Guardar permiso</button> <button class="ghost small" data-member-remove="${index}">Retirar acceso</button></td></tr>`).join('') || emptyRow(3,'No hay colaboradores con acceso. Puedes invitarlos abajo.');
+    $('teamInvitations').innerHTML = invitationRows(teamInvitations);
+    $('teamStatus').textContent = `${teamMembers.length} colaborador(es). El acceso del propietario está protegido.`;
+  } catch (error) {
+    if (version === teamVersion && selected === rid) $('teamStatus').textContent = 'No se pudieron consultar los accesos. ' + errorText(error);
+  }
+}
+async function loadPlatform() {
+  const version = ++platformVersion;
+  if (!context?.platform_admin) return;
+  $('platformStatus').textContent = 'Consultando restaurantes e invitaciones…';
+  $('platformRestaurants').innerHTML = ''; $('platformInvitations').innerHTML = '';
+  platformRestaurants = []; platformInvitations = [];
+  try {
+    const result = await call('propina_platform_snapshot');
+    if (version !== platformVersion || !context?.platform_admin) return;
+    platformRestaurants = result.restaurants || []; platformInvitations = result.invitations || [];
+    $('platformRestaurants').innerHTML = platformRestaurants.map((restaurant, index) => `<tr><td><strong>${safe(restaurant.name)}</strong><small class="state-text">${safe(restaurant.email)}</small></td><td><span class="badge ${restaurant.active ? '' : 'gray'}">${restaurant.active ? 'Activo' : 'Suspendido'}</span></td><td>${Number(restaurant.members) || 0}</td><td><label class="state-text" for="restaurantReason${index}">Motivo del cambio</label><input id="restaurantReason${index}" data-restaurant-reason="${index}" maxlength="500" placeholder="Indica el motivo"><button class="ghost small" data-restaurant-status="${index}">${restaurant.active ? 'Suspender acceso' : 'Reactivar acceso'}</button></td></tr>`).join('') || emptyRow(4,'No hay restaurantes registrados.');
+    $('platformInvitations').innerHTML = invitationRows(platformInvitations, true);
+    $('platformStatus').textContent = `${platformRestaurants.length} restaurante(s) · ${platformRestaurants.filter(r => r.active).length} activo(s). Los cobros permanecen desactivados.`;
+  } catch (error) {
+    if (version === platformVersion && context?.platform_admin) $('platformStatus').textContent = 'No se pudo consultar el panel. ' + errorText(error);
+  }
+}
+bind('refreshTeam', loadTeam);
+bind('refreshPlatform', loadPlatform);
+$('teamAccessPanel').addEventListener('click', event => {
+  const button = event.target.closest('[data-member-save],[data-member-remove],[data-team-revoke]');
+  if (!button) return;
+  guard(async () => {
+    if (!canManageTeam()) throw Error('Solo el propietario puede administrar estos accesos.');
+    const selected = rid;
+    if (button.dataset.teamRevoke !== undefined) {
+      const invitation = teamInvitations[Number(button.dataset.teamRevoke)];
+      if (!invitation || invitationState(invitation) !== 'Pendiente') throw Error('Actualiza la lista de invitaciones.');
+      if (!confirm(`¿Revocar la invitación de ${invitation.email}? Ese código dejará de funcionar.`)) return;
+      await call('propina_revoke_staff_invitation', {rid:selected,iid:invitation.id});
+    } else {
+      const removing = button.dataset.memberRemove !== undefined;
+      const index = Number(removing ? button.dataset.memberRemove : button.dataset.memberSave);
+      const member = teamMembers[index];
+      if (!member || member.role === 'owner') throw Error('Actualiza la lista de colaboradores.');
+      const newRole = removing ? null : document.querySelector(`[data-member-role="${index}"]`).value;
+      if (!removing && !['admin','viewer'].includes(newRole)) throw Error('Permiso inválido.');
+      if (!confirm(removing ? `¿Retirar el acceso de ${member.email} a este restaurante? Sus registros se conservarán.` : `¿Cambiar el permiso de ${member.email} a ${roleLabel(newRole)}?`)) return;
+      await call('propina_manage_member', {rid:selected,member_email:member.email,new_role:newRole});
+    }
+    if (selected === rid) { await loadTeam(); msg('Accesos actualizados. Los registros del restaurante se conservaron.', 'success'); }
+  }, button);
+});
+$('platformOverview').addEventListener('click', event => {
+  const button = event.target.closest('[data-restaurant-status],[data-platform-revoke]');
+  if (!button) return;
+  guard(async () => {
+    if (!context?.platform_admin) throw Error('Solo el propietario de Turnia puede administrar la plataforma.');
+    if (button.dataset.platformRevoke !== undefined) {
+      const invitation = platformInvitations[Number(button.dataset.platformRevoke)];
+      if (!invitation || invitationState(invitation) !== 'Pendiente') throw Error('Actualiza la lista de invitaciones.');
+      if (!confirm(`¿Revocar la invitación de ${invitation.email}? Ese código dejará de funcionar.`)) return;
+      await call('propina_revoke_invitation', {iid:invitation.id});
+    } else {
+      const index = Number(button.dataset.restaurantStatus), restaurant = platformRestaurants[index];
+      if (!restaurant) throw Error('Actualiza la lista de restaurantes.');
+      const reason = document.querySelector(`[data-restaurant-reason="${index}"]`).value.trim();
+      if (reason.length < 3 || reason.length > 500) throw Error('Indica un motivo de entre 3 y 500 caracteres.');
+      if (!confirm(`¿${restaurant.active ? 'Suspender' : 'Reactivar'} el acceso de ${restaurant.name}? Sus usuarios, jornadas y propinas se conservarán.`)) return;
+      await call('propina_set_restaurant_status', {rid:restaurant.id,enabled:!restaurant.active,change_reason:reason});
+      await init(); setTab('owner');
+    }
+    await loadPlatform(); msg('Administración actualizada. No se realizó ningún cobro.', 'success');
+  }, button);
+});
 const guideSteps = [
   ['Activa tu acceso','Tu invitación es el punto de partida.', ['Usa el correo que Nicolás Valencia autorizó e ingresa el código en «Tengo una invitación».','Confirma el correo de registro e inicia sesión.','En Accesos y ajustes, pega el código y pulsa «Activar acceso y ver la guía».'], 'La autorización es individual. No compartas tu contraseña ni publiques tu código.', 'access'],
   ['Prepara tu restaurante','Cada local tiene su propio espacio.', ['Si eres propietario autorizado, crea tu local en Accesos y ajustes.','Si te invitaron como colaborador, el local aparecerá en el selector superior.','Cuando tengas más de un local, comprueba cuál está seleccionado antes de registrar.'], 'Si ya existe tu restaurante, selecciónalo para continuar.', 'access'],
@@ -323,7 +443,7 @@ bind('forgot', async () => {
   msg('Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.','success');
 });
 bind('savePassword', async () => {
-  if ($('newPassword').value.length < 8 || $('newPassword').value !== $('confirmPassword').value) throw Error('Escribe la misma contraseña en ambos campos, con al menos 8 caracteres.');
+  validateNewPassword($('newPassword').value, $('confirmPassword').value);
   check(await sb.auth.updateUser({password:$('newPassword').value}));
   $('newPassword').value = ''; $('confirmPassword').value = ''; recoveryMode = false;
   $('recovery').classList.add('hide'); await init(); msg('Contraseña actualizada.','success');
@@ -334,37 +454,50 @@ bind('saveAccountProfile', async () => {
   const phone = $('accountPhone').value.trim();
   if (name.length < 2 || name.length > 100) throw Error('Escribe tu nombre y apellido (2 a 100 caracteres).');
   if (phone && !/^[+0-9 ()-]{7,30}$/.test(phone)) throw Error('Revisa el teléfono: usa números, espacios o el signo +.');
-  const update = check(await sb.auth.updateUser({data:{...user.user_metadata,display_name:name,full_name:name,phone}}));
+  const update = check(await sb.auth.updateUser({data:{display_name:name,full_name:name,phone}}));
   if (update?.user) user = update.user;
   await init(); setTab('access');
   setSettingsStatus('Tus datos personales se guardaron correctamente.');
 });
 bind('changeAccountPassword', async () => {
+  $('testPasswordLogin').classList.add('hide');
   if (!user?.email) throw Error('Debes iniciar sesión.');
   const current = $('currentAccountPassword').value;
   const next = $('nextAccountPassword').value;
   if (!current) throw Error('Escribe tu contraseña actual.');
-  if (next.length < 8 || next.length > 128) throw Error('Tu nueva contraseña debe tener entre 8 y 128 caracteres.');
-  if (next !== $('nextAccountPasswordConfirm').value) throw Error('Las contraseñas nuevas no coinciden.');
+  validateNewPassword(next, $('nextAccountPasswordConfirm').value);
   if (current === next) throw Error('La nueva contraseña debe ser diferente de la actual.');
-  check(await sb.auth.signInWithPassword({email:user.email,password:current}));
-  check(await sb.auth.updateUser({password:next}));
+  const email = user.email, expectedUser = user.id;
+  const verified = check(await sb.auth.signInWithPassword({email,password:current}));
+  if (verified.session?.user?.id !== expectedUser || user?.id !== expectedUser) throw Error('La sesión cambió. Vuelve a iniciar sesión.');
+  check(await sb.auth.updateUser({password:next,current_password:current}));
   $('currentAccountPassword').value = '';
   $('nextAccountPassword').value = '';
   $('nextAccountPasswordConfirm').value = '';
   setSettingsStatus('Contraseña actualizada. La próxima vez podrás iniciar sesión con tu nueva clave.');
+  $('testPasswordLogin').classList.remove('hide');
+});
+function validateNewPassword(password, confirmation) {
+  if (password.length < 8) throw Error('Usa una contraseña de al menos 8 caracteres.');
+  if (new TextEncoder().encode(password).length > 72) throw Error('La contraseña es demasiado larga. Usa una más corta.');
+  if (password !== confirmation) throw Error('Las contraseñas nuevas no coinciden.');
+}
+bind('testPasswordLogin', async () => {
+  const email = user?.email || '';
+  await logout(); $('email').value = email;
+  msg('Inicia sesión con tu nueva contraseña para comprobar el cambio.', 'success'); $('password').focus();
 });
 bind('saveRestaurantDetails', async () => {
   const selected = rid;
   const newName = $('restaurantEditName').value.trim().replace(/\s+/g,' ');
   if (!selected || currentRestaurant()?.role !== 'owner') throw Error('Solo el propietario puede editar este restaurante.');
-  if (newName.length < 2 || newName.length > 120) throw Error('Ingresa un nombre de restaurante entre 2 y 120 caracteres.');
+  if (newName.length < 2 || newName.length > 80) throw Error('Ingresa un nombre de restaurante entre 2 y 80 caracteres.');
   await call('propina_update_restaurant_name',{p_restaurant_id:selected,p_name:newName});
   await init(); setTab('access');
   setSettingsStatus('El nombre de tu restaurante se actualizó para todo el equipo.');
 });
 async function logout() {
-  check(await sb.auth.signOut()); context = null; user = null; rid = ''; loadVersion++;
+  check(await sb.auth.signOut({scope:'local'})); context = null; user = null; rid = ''; loadVersion++;
   resetData(); closeDrawer(); setTab('home'); $('settingsStatus').textContent = ''; $('settingsStatus').className = 'notice hide'; $('currentAccountPassword').value = ''; $('nextAccountPassword').value = ''; $('nextAccountPasswordConfirm').value = ''; $('password').value = ''; $('invite').value = ''; $('acceptToken').value = '';
   $('authMessage').textContent = ''; $('message').textContent = ''; await init();
 }
@@ -452,12 +585,13 @@ bind('sandboxPay', async () => {
 });
 $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData(); renderAccountSettings();
+  if (tab === 'access') void loadTeam();
   $('profileRole').textContent = context?.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
   await load();
 });
 bind('createRestaurant', async () => {
   const name = $('restaurantName').value.trim();
-  if (!context?.can_create || !name) throw Error('Escribe el nombre del restaurante para el que tienes autorización.');
+  if (!context?.can_create || !name || name.length > 80) throw Error('Escribe un nombre de restaurante de hasta 80 caracteres.');
   rid = await call('propina_create_restaurant',{restaurant_name:name});
   $('restaurantName').value = ''; await init(); setTab('staff'); msg('Restaurante creado. Agrega las áreas y sus porcentajes.','success');
 });
@@ -539,12 +673,14 @@ bind('adminInvite', async () => {
   if (role !== 'restaurant_owner' && !rid) throw Error('Selecciona un restaurante para esta invitación.');
   const data = role === 'restaurant_owner' ? await call('propina_issue_membership_invitation',{invitee_email:email,duration_days:Number($('membershipDuration').value),price_clp:5000}) : await call('propina_issue_invitation',{invitee_email:email,invitee_role:role,rid});
   showToken(data,'inviteResult'); msg('Invitación creada. No se realizó ningún cobro.','success');
+  await loadPlatform();
 });
 $('adminRole').onchange = () => { $('membershipDuration').disabled = $('adminRole').value !== 'restaurant_owner'; };
 bind('staffInvite', async () => {
   if (!canInvite()) throw Error('Necesitas permiso de propietario del restaurante.');
   if (!$('staffEmail').value || !$('staffEmail').checkValidity()) throw Error('Escribe un correo válido.');
   showToken(await call('propina_issue_staff_invitation',{invitee_email:$('staffEmail').value.trim(),invitee_role:$('staffRole').value,rid}),'staffInviteResult');
+  await loadTeam();
 });
 bind('acceptInvite', async () => {
   const token = $('acceptToken').value.trim();
@@ -572,6 +708,11 @@ sb.auth.onAuthStateChange(event => {
     recoveryMode = true; $('auth').classList.add('hide'); $('app').classList.add('hide'); $('loading').classList.add('hide'); $('recovery').classList.remove('hide');
   }
   if (event === 'SIGNED_OUT') {
+    authVersion++; teamVersion++; platformVersion++;
+    platformRestaurants = []; platformInvitations = [];
+    $('platformRestaurants').innerHTML = ''; $('platformInvitations').innerHTML = '';
+    ['accountDisplayName','accountPhone','accountEmailReadonly','restaurantEditName','currentAccountPassword','nextAccountPassword','nextAccountPasswordConfirm','newPassword','confirmPassword'].forEach(id => { $(id).value = ''; });
+    $('testPasswordLogin').classList.add('hide'); $('settingsStatus').classList.add('hide');
     context = null; user = null; rid = ''; loadVersion++; recoveryMode = false; loadingData = false;
     resetData(); $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('recovery').classList.add('hide'); $('auth').classList.remove('hide');
   }
