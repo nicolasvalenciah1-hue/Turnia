@@ -456,11 +456,64 @@ function renderDay() {
   }).join('') || emptyRow(8,'Agrega trabajadores en Equipo y áreas para registrar una jornada.');
   renderAttendanceCount(); updatePermissions();
 }
-function renderAttendanceCount() {
-  const rows = [...document.querySelectorAll('[data-present]:checked')];
-  const hours = rows.reduce((sum,el) => sum + Number(document.querySelector(`[data-hours="${el.dataset.present}"]`).value || 0), 0);
-  $('attendanceCount').textContent = `${rows.length} persona(s) presente(s) · ${hours.toLocaleString('es-CL')} horas en total`;
+function classicEffectivePoints(hours, participationPercent, baseHours) {
+  if (!Number.isFinite(hours) || hours <= 0 || !Number.isFinite(participationPercent) ||
+      participationPercent < 1 || participationPercent > 200 || !Number.isFinite(baseHours) || baseHours <= 0) return NaN;
+  return hours / baseHours * participationPercent / 100;
 }
+function renderAttendanceCount() {
+  const base = Number($('shiftHours').value);
+  const total = Number($('amount').value);
+  const validAmount = $('amount').value !== '' && Number.isSafeInteger(total) && total >= 0;
+  const entries = workers.map(worker => {
+    const wid = worker.id;
+    const selected = !!document.querySelector(`[data-present="${wid}"]`)?.checked;
+    const hours = Number(document.querySelector(`[data-hours="${wid}"]`)?.value);
+    const input = document.querySelector(`[data-day-percent="${wid}"]`);
+    const pct = input?.value === '' ? NaN : Number(input?.value);
+    const points = classicEffectivePoints(hours, pct, base);
+    const badge = document.querySelector(`[data-day-points="${wid}"]`);
+    const estimate = document.querySelector(`[data-day-estimate="${wid}"]`);
+    if (badge) badge.textContent = selected && Number.isFinite(points) ? Number(points.toFixed(4)).toLocaleString('es-CL') : '—';
+    if (estimate) estimate.textContent = '—';
+    return {worker,selected,hours,points,estimate};
+  });
+  const chosen = entries.filter(e => e.selected);
+  const selectedHours = chosen.reduce((sum,e) => sum + (Number.isFinite(e.hours) ? e.hours : 0),0);
+  const selectedPoints = chosen.reduce((sum,e) => sum + (Number.isFinite(e.points) ? e.points : 0),0);
+  $('attendanceCount').textContent = `${chosen.length} persona(s) presente(s) · ${selectedHours.toLocaleString('es-CL')} horas · ${Number(selectedPoints.toFixed(2)).toLocaleString('es-CL')} puntos efectivos`;
+  const tooMany = chosen.filter(e => Number.isFinite(e.points) && e.points > 2.000001);
+  const warning = $('classicPointsWarning');
+  warning.classList.toggle('hide', !tooMany.length);
+  warning.textContent = tooMany.length ? `Puntos duplicados: ${tooMany.map(e=>e.worker.name).join(', ')} supera 2 puntos. Si trabajó 16 h y el turno base es de 8 h, ya tiene 2 puntos al 100%. No agregues otro 200%.` : '';
+  const areaPanel = $('classicAreaPreview');
+  if (!validAmount || !Number.isFinite(base) || base <= 0 || !areas.length) {
+    areaPanel.innerHTML = '<p class="muted">Ingresa las propinas y las horas de un turno para revisar los fondos de cada área.</p>';
+    return;
+  }
+  areaPanel.innerHTML = areas.filter(area=>Number(area.percentage)>0).map(area=>{
+    const members = chosen.filter(e => e.worker.area_id === area.id);
+    const validMembers = members.filter(e => Number.isFinite(e.points) && e.points > 0);
+    const sumPoints = validMembers.reduce((sum,e)=>sum+e.points,0);
+    const budget = Math.round(total * Number(area.percentage) / 100);
+    if (sumPoints > 0) {
+      const results = validMembers.map(e=>{
+        const exact = budget * e.points / sumPoints;
+        return {...e,estimateAmount:Math.floor(exact),remainder:exact-Math.floor(exact)};
+      });
+      const left = budget - results.reduce((sum,e)=>sum+e.estimateAmount,0);
+      const rank = results.slice().sort((a,b)=>b.remainder-a.remainder || a.worker.id.localeCompare(b.worker.id));
+      for(let i=0;i<left && i<rank.length;i++)rank[i].estimateAmount++;
+      results.forEach(e=>{if(e.estimate)e.estimate.textContent=clp(e.estimateAmount);});
+    }
+    return `<div class="classic-area-preview-row"><span><strong>${safe(area.name)} · ${Number(area.percentage)}%</strong><small>${members.length} persona(s) · ${Number(sumPoints.toFixed(2)).toLocaleString('es-CL')} puntos</small></span><strong>${clp(budget)}</strong>${!members.length?'<span class="muted">Falta personal</span>':''}</div>`;
+  }).join('') || '<p class="muted">Configura las áreas de tu restaurante.</p>';
+}
+$('attendance').addEventListener('input',renderAttendanceCount);
+$('attendance').addEventListener('change',renderAttendanceCount);
+$('amount').addEventListener('input',renderAttendanceCount);
+$('shiftHours').addEventListener('input',renderAttendanceCount);
+
 function renderPayouts() {
   const day = days.find(d => d.work_date === $('payoutDate').value);
   const data = day ? payouts.filter(p => p.day_id === day.id) : [];
