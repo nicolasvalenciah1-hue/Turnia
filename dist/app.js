@@ -364,12 +364,19 @@ function renderHistory() {
   $('export').disabled = !data.length;
 }
 function renderHome() {
-  const month = today().slice(0,7), monthDays = days.filter(d => d.work_date.startsWith(month));
-  $('monthTotal').textContent = clp(monthDays.reduce((n,d) => n + Number(d.amount_clp),0));
-  $('monthDays').textContent = monthDays.length;
-  $('activeWorkers').textContent = workers.filter(w => w.active).length;
-  $('monthLabel').textContent = new Date().toLocaleDateString('es-CL',{month:'long',year:'numeric'});
-  $('recentDays').innerHTML = days.slice(0,4).map(d => `<tr><td>${safe(dateLabel(d.work_date))}</td><td class="money">${clp(d.amount_clp)}</td><td><button class="ghost small" data-open-date="${safe(d.work_date)}" aria-label="Ver reparto del ${safe(dateLabel(d.work_date))}">→</button></td></tr>`).join('') || emptyRow(3,'<strong>Tu próxima jornada empieza aquí</strong>Cuando guardes un día, lo encontrarás en este espacio.');
+  const month=today().slice(0,7),classic=days.filter(d=>d.work_date.startsWith(month));
+  const flexible=flexShifts.filter(s=>s.work_date.startsWith(month));
+  const total=classic.reduce((n,d)=>n+Number(d.amount_clp),0)+flexible.reduce((n,s)=>n+Number(s.amount_clp),0);
+  $('monthTotal').textContent=clp(total);
+  $('monthDays').textContent=new Set([...classic.map(d=>d.work_date),...flexible.map(s=>s.work_date)]).size;
+  $('activeWorkers').textContent=workers.filter(w=>w.active).length;
+  $('monthLabel').textContent=new Date().toLocaleDateString('es-CL',{month:'long',year:'numeric'});
+  const recent=days.map(d=>({date:d.work_date,amount:Number(d.amount_clp),flex:false}));
+  const byDate=new Map();
+  flexShifts.forEach(s=>byDate.set(s.work_date,(byDate.get(s.work_date)||0)+Number(s.amount_clp)));
+  byDate.forEach((amount,date)=>recent.push({date,amount,flex:true}));
+  recent.sort((a,b)=>b.date.localeCompare(a.date));
+  $('recentDays').innerHTML=recent.slice(0,4).map(d=>'<tr><td>'+safe(dateLabel(d.date))+(d.flex?' · AM/PM':'')+'</td><td class="money">'+clp(d.amount)+'</td><td><button class="ghost small" '+(d.flex?'data-open-flex-date':'data-open-date')+'="'+safe(d.date)+'" aria-label="Ver reparto">→</button></td></tr>').join('')||emptyRow(3,'<strong>Tu próxima jornada empieza aquí</strong>Cuando guardes un día, lo encontrarás en este espacio.');
 }
 function renderMembershipCard(item) {
   if (!item) { $('membershipCard').innerHTML = '<h2>Membresía del restaurante</h2><p class="muted">' + (rid ? 'No hay información de membresía disponible para este local.' : 'Selecciona o crea un restaurante para consultar su acceso.') + '</p><span class="badge gray">Cobros desactivados</span>'; return; }
@@ -499,7 +506,7 @@ function renderMyTips() {
   const invalid = from && to && from > to;
   const rows = invalid ? [] : myTips.filter(p => (!from || p.work_date >= from) && (!to || p.work_date <= to));
   $('myTipsTotal').textContent = myTipsLoaded ? clp(rows.reduce((n,p) => n + Number(p.calculated_clp),0)) : '—';
-  $('myTipsDays').textContent = myTipsLoaded ? rows.length : '—';
+  $('myTipsDays').textContent = myTipsLoaded ? new Set(rows.map(p=>p.work_date)).size : '—';
   $('myTipsRows').innerHTML = rows.map(p => `<tr><td>${safe(dateLabel(p.work_date))}</td><td>${p.kind==='flex' ? safe(p.group_code==='DIA'?'Fondo diario':p.group_code)+' · '+Number(p.weight)+' parte(s)' : safe(p.hours)+' h'}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(3,invalid ? 'La fecha Desde debe ser anterior o igual a Hasta.' : myTipsLoaded ? 'No hay jornadas asignadas a tu ficha en este período.' : 'Pulsa Actualizar para consultar tus propinas.');
 }
 $('myTipsFrom').onchange = renderMyTips; $('myTipsTo').onchange = renderMyTips;
@@ -836,6 +843,8 @@ bind('saveDay', async () => {
   $('payoutDate').value = date; await load(); setTab('distribution'); msg('Jornada guardada y reparto calculado.','success');
 });
 function openPayout(e) {
+  const flexible=e.target.closest('[data-open-flex-date]');
+  if(flexible){$('flexDate').value=flexible.dataset.openFlexDate;renderFlex();setTab('flex');return;}
   const el = e.target.closest('[data-open-date]'); if (!el) return;
   $('payoutDate').value = el.dataset.openDate; renderPayouts(); setTab('distribution');
 }
