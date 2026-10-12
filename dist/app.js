@@ -452,15 +452,68 @@ function renderDay() {
     const shift = current ? shifts.find(s => s.day_id === current.id && s.worker_id === w.id) : null;
     const participation = Number((Number(shift?.participation ?? 1) * 100).toFixed(2));
     const note = shift?.note || '', agreed = !!shift?.agreed;
-    return `<tr><td><input type="checkbox" aria-label="${safe(w.name)} trabajó" data-present="${safe(w.id)}" ${shift ? 'checked' : ''}></td><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><input aria-label="Horas de ${safe(w.name)}" type="number" data-hours="${safe(w.id)}" min="0.5" max="24" step="0.5" value="${Number(shift?.hours || $('shiftHours').value || 8)}"></td><td><input aria-label="Participación porcentual de ${safe(w.name)}" type="number" data-day-percent="${safe(w.id)}" min="1" max="200" step="0.01" value="${participation}"></td><td><div class="classic-participation-agreement"><input aria-label="Motivo del acuerdo para ${safe(w.name)}" data-day-note="${safe(w.id)}" maxlength="300" placeholder="Motivo para menos de 100%" value="${safe(note)}"><label class="check"><input type="checkbox" data-day-agreed="${safe(w.id)}" ${agreed ? 'checked' : ''}>Acuerdo confirmado</label></div></td></tr>`;
-  }).join('') || emptyRow(6,'Agrega trabajadores en Equipo y áreas para registrar una jornada.');
+    return `<tr><td><input type="checkbox" aria-label="${safe(w.name)} trabajó" data-present="${safe(w.id)}" ${shift ? 'checked' : ''}></td><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><input aria-label="Horas de ${safe(w.name)}" type="number" data-hours="${safe(w.id)}" min="0.5" max="24" step="0.5" value="${Number(shift?.hours || $('shiftHours').value || 8)}"></td><td><input aria-label="Participación porcentual de ${safe(w.name)}" type="number" data-day-percent="${safe(w.id)}" min="1" max="200" step="0.01" value="${participation}"></td><td><strong data-day-points="${safe(w.id)}" class="point-cell">—</strong></td><td class="money"><span data-day-estimate="${safe(w.id)}">—</span></td><td><div class="classic-participation-agreement"><input aria-label="Motivo del acuerdo para ${safe(w.name)}" data-day-note="${safe(w.id)}" maxlength="300" placeholder="Motivo para menos de 100%" value="${safe(note)}"><label class="check"><input type="checkbox" data-day-agreed="${safe(w.id)}" ${agreed ? 'checked' : ''}>Acuerdo confirmado</label></div></td></tr>`;
+  }).join('') || emptyRow(8,'Agrega trabajadores en Equipo y áreas para registrar una jornada.');
   renderAttendanceCount(); updatePermissions();
 }
-function renderAttendanceCount() {
-  const rows = [...document.querySelectorAll('[data-present]:checked')];
-  const hours = rows.reduce((sum,el) => sum + Number(document.querySelector(`[data-hours="${el.dataset.present}"]`).value || 0), 0);
-  $('attendanceCount').textContent = `${rows.length} persona(s) presente(s) · ${hours.toLocaleString('es-CL')} horas en total`;
+function classicEffectivePoints(hours, participationPercent, baseHours) {
+  if (!Number.isFinite(hours) || hours <= 0 || !Number.isFinite(participationPercent) ||
+      participationPercent < 1 || participationPercent > 200 || !Number.isFinite(baseHours) || baseHours <= 0) return NaN;
+  return hours / baseHours * participationPercent / 100;
 }
+function renderAttendanceCount() {
+  const base = Number($('shiftHours').value);
+  const total = Number($('amount').value);
+  const validAmount = $('amount').value !== '' && Number.isSafeInteger(total) && total >= 0;
+  const entries = workers.map(worker => {
+    const wid = worker.id;
+    const selected = !!document.querySelector(`[data-present="${wid}"]`)?.checked;
+    const hours = Number(document.querySelector(`[data-hours="${wid}"]`)?.value);
+    const input = document.querySelector(`[data-day-percent="${wid}"]`);
+    const pct = input?.value === '' ? NaN : Number(input?.value);
+    const points = classicEffectivePoints(hours, pct, base);
+    const badge = document.querySelector(`[data-day-points="${wid}"]`);
+    const estimate = document.querySelector(`[data-day-estimate="${wid}"]`);
+    if (badge) badge.textContent = selected && Number.isFinite(points) ? Number(points.toFixed(4)).toLocaleString('es-CL') : '—';
+    if (estimate) estimate.textContent = '—';
+    return {worker,selected,hours,points,estimate};
+  });
+  const chosen = entries.filter(e => e.selected);
+  const selectedHours = chosen.reduce((sum,e) => sum + (Number.isFinite(e.hours) ? e.hours : 0),0);
+  const selectedPoints = chosen.reduce((sum,e) => sum + (Number.isFinite(e.points) ? e.points : 0),0);
+  $('attendanceCount').textContent = `${chosen.length} persona(s) presente(s) · ${selectedHours.toLocaleString('es-CL')} horas · ${Number(selectedPoints.toFixed(2)).toLocaleString('es-CL')} puntos efectivos`;
+  const tooMany = chosen.filter(e => Number.isFinite(e.points) && e.points > 2.000001);
+  const warning = $('classicPointsWarning');
+  warning.classList.toggle('hide', !tooMany.length);
+  warning.textContent = tooMany.length ? `Puntos duplicados: ${tooMany.map(e=>e.worker.name).join(', ')} supera 2 puntos. Si trabajó 16 h y el turno base es de 8 h, ya tiene 2 puntos al 100%. No agregues otro 200%.` : '';
+  const areaPanel = $('classicAreaPreview');
+  if (!validAmount || !Number.isFinite(base) || base <= 0 || !areas.length) {
+    areaPanel.innerHTML = '<p class="muted">Ingresa las propinas y las horas de un turno para revisar los fondos de cada área.</p>';
+    return;
+  }
+  areaPanel.innerHTML = areas.filter(area=>Number(area.percentage)>0).map(area=>{
+    const members = chosen.filter(e => e.worker.area_id === area.id);
+    const validMembers = members.filter(e => Number.isFinite(e.points) && e.points > 0);
+    const sumPoints = validMembers.reduce((sum,e)=>sum+e.points,0);
+    const budget = Math.round(total * Number(area.percentage) / 100);
+    if (sumPoints > 0) {
+      const results = validMembers.map(e=>{
+        const exact = budget * e.points / sumPoints;
+        return {...e,estimateAmount:Math.floor(exact),remainder:exact-Math.floor(exact)};
+      });
+      const left = budget - results.reduce((sum,e)=>sum+e.estimateAmount,0);
+      const rank = results.slice().sort((a,b)=>b.remainder-a.remainder || a.worker.id.localeCompare(b.worker.id));
+      for(let i=0;i<left && i<rank.length;i++)rank[i].estimateAmount++;
+      results.forEach(e=>{if(e.estimate)e.estimate.textContent=clp(e.estimateAmount);});
+    }
+    return `<div class="classic-area-preview-row"><span><strong>${safe(area.name)} · ${Number(area.percentage)}%</strong><small>${members.length} persona(s) · ${Number(sumPoints.toFixed(2)).toLocaleString('es-CL')} puntos</small></span><strong>${clp(budget)}</strong>${!members.length?'<span class="muted">Falta personal</span>':''}</div>`;
+  }).join('') || '<p class="muted">Configura las áreas de tu restaurante.</p>';
+}
+$('attendance').addEventListener('input',renderAttendanceCount);
+$('attendance').addEventListener('change',renderAttendanceCount);
+$('amount').addEventListener('input',renderAttendanceCount);
+$('shiftHours').addEventListener('input',renderAttendanceCount);
+
 function renderPayouts() {
   const day = days.find(d => d.work_date === $('payoutDate').value);
   const data = day ? payouts.filter(p => p.day_id === day.id) : [];
@@ -469,8 +522,8 @@ function renderPayouts() {
   $('payouts').innerHTML = data.map(p => {
     const shift = shifts.find(s => s.day_id === p.day_id && s.worker_id === p.worker_id);
     const percentage = Number((Number(shift?.participation ?? 1) * 100).toFixed(2));
-    return `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td>${Number(p.hours)}</td><td>${percentage}%</td><td class="money">${clp(p.calculated_clp)}</td></tr>`;
-  }).join('') || emptyRow(5,'Registra una jornada o selecciona otra fecha para ver su reparto.');
+    return `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td>${Number(p.hours)}</td><td>${percentage}%</td><td>${Number((Number(p.hours)*Number(shift?.participation??1)/Number(day?.hours_per_shift||8)).toFixed(2)).toLocaleString('es-CL')}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`;
+  }).join('') || emptyRow(6,'Registra una jornada o selecciona otra fecha para ver su reparto.');
   $('editDay').disabled = !day;
 }
 function visibleHistory() {
@@ -1086,6 +1139,7 @@ bind('saveDay', async () => {
   if (!present.length || present.some(x => !Number.isFinite(x.hours) || x.hours <= 0 || x.hours > 24)) throw Error('Selecciona personal e ingresa horas válidas, entre 0,5 y 24.');
   if (present.some(x => x.participation === null || !Number.isFinite(x.participation) || x.participation < 0.01 || x.participation > 2)) throw Error('La participación de cada persona debe estar entre 1% y 200%.');
   if (present.some(x => x.note.length > 300 || x.participation !== 1 && (!x.agreed || x.note.length < 10))) throw Error('Una participación distinta de 100% requiere acuerdo confirmado y un motivo de al menos 10 caracteres.');
+  if (present.some(x => x.hours / hours_per_shift * x.participation > 2.000001)) throw Error('Máximo 2 puntos por persona en jornada completa. Si trabajó 16 horas y el turno base es de 8 horas, ya tiene 2 puntos al 100%: no sumes otro 200%.');
   const presentAreas = new Set(present.map(x => workers.find(w => w.id === x.worker_id)?.area_id));
   if (areas.some(a => Number(a.percentage) > 0 && !presentAreas.has(a.id))) throw Error('Cada área con porcentaje positivo necesita al menos una persona presente.');
   if (flexShifts.some(s => s.work_date === date)) throw Error('El ' + dateLabel(date) + ' ya tiene propinas AM/PM. Abre esa modalidad para revisar el reparto y evita duplicar los montos.');
