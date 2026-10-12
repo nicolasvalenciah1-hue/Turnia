@@ -12,7 +12,7 @@ assert(entry.includes('href="registro.html"'),'Signup linked from login');
 assert(html.includes('id="password"') && html.includes('id="confirmPassword"'),'Password inputs');
 assert(html.includes('registro.js'),'Signup script loaded');
 assert(!html.includes('simulateApprove'),'Demo self-approval removed');
-assert(!/create-payment|mercadopago-create-subscription|checkout/i.test(js),'No checkout request in browser');
+assert(!/sb\.functions\.invoke\(|fetch\(/i.test(js),'No network checkout request in browser');
 assert(!/insert\s+into\s+public\.propina_access/i.test(migration),'Signup does not grant access');
 assert(!/insert\s+into\s+propina_private\.memberships/i.test(migration),'Signup does not create memberships');
 assert(migration.includes('pending_payment'),'Pending state required');
