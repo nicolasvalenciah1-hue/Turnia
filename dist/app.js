@@ -96,10 +96,29 @@ async function init() {
   user = result.session?.user || null;
   if (!user) {
     context = null; rid = ''; loadVersion++; resetData();
-    $('app').classList.add('hide'); $('auth').classList.remove('hide'); $('loading').classList.add('hide');
+    $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('auth').classList.remove('hide'); $('loading').classList.add('hide');
     return;
   }
   context = await call('propina_account_context');
+  // A newly registered customer never enters the operations dashboard unless
+  // the server has granted restaurant access after validating the payment.
+  // User metadata is only a UX hint; actual authorization stays in Supabase RLS.
+  if (user.user_metadata?.turnia_registration === 'v1' && !(context.restaurants || []).length) {
+    let registration = null;
+    try { registration = await call('turnia_registration_status'); } catch {
+      // Fail closed even if the status endpoint is unavailable.
+    }
+    $('pendingRestaurant').textContent = registration?.restaurant_name || 'Tu restaurante';
+    $('pendingNotice').textContent = registration?.status === 'cancelled'
+      ? 'Este registro fue cancelado. Contacta con soporte.'
+      : 'Cuenta pendiente de activación. Los cobros siguen desactivados.';
+    $('app').classList.add('hide');
+    $('auth').classList.add('hide');
+    $('loading').classList.add('hide');
+    $('pendingRegistration').classList.remove('hide');
+    return;
+  }
+  $('pendingRegistration').classList.add('hide');
   const list = context.restaurants || [];
   rid = list.some(r => r.id === rid) ? rid : list[0]?.id || '';
   $('restaurant').innerHTML = list.length ? list.map(r => `<option value="${safe(r.id)}">${safe(r.name)}</option>`).join('') : '<option value="">Sin restaurante autorizado</option>';
@@ -276,6 +295,7 @@ async function logout() {
 }
 bind('logout', logout);
 bind('logoutTop', logout);
+bind('pendingLogout', logout);
 $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData();
   $('profileRole').textContent = context?.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
@@ -399,7 +419,7 @@ sb.auth.onAuthStateChange(event => {
   }
   if (event === 'SIGNED_OUT') {
     context = null; user = null; rid = ''; loadVersion++; recoveryMode = false; loadingData = false;
-    resetData(); $('app').classList.add('hide'); $('recovery').classList.add('hide'); $('auth').classList.remove('hide');
+    resetData(); $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('recovery').classList.add('hide'); $('auth').classList.remove('hide');
   }
 });
 $('date').value = today(); $('payoutDate').value = today(); setTab('home');
