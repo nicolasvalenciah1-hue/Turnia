@@ -22,6 +22,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, 'sb_publishable_uT_FeTqwfX
 let context = null, user = null, rid = '', areas = [], workers = [], days = [], shifts = [], payouts = [];
 let myTips = [], myTipsLoaded = false;
 let flexShifts = [], flexPayouts = [];
+let restaurantBusiness = {}, restaurantBusinessFor = '', inviteError = '';
 let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = false;
 let guideIndex = 0, guideDone = false;
 let authVersion = 0, teamVersion = 0, platformVersion = 0;
@@ -42,9 +43,12 @@ const personalOnly = () => currentRestaurant()?.read_scope === 'personal' && cur
 const hasWorkerLink = () => !!currentRestaurant()?.worker_id;
 const canManageTeam = () => !!rid && currentRestaurant()?.role === 'owner';
 const roleLabel = role => ({owner:'Propietario del local',admin:'Administrador del local',viewer:'Solo consulta'}[role] || 'Cliente');
-const titles = {mytips:'Mis propinas',home:'Inicio',daily:'Registrar día',flex:'Turnos AM / PM',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',guide:'Guía de uso'};
+const titles = {mytips:'Mis propinas',home:'Inicio',daily:'Registrar propinas',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',guide:'Guía de uso'};
 function msg(text = '', tone = 'info') {
-  const target = recoveryMode ? $('recoveryMessage') : context ? $('message') : $('authMessage');
+  const target = recoveryMode ? $('recoveryMessage')
+    : !$('restaurantSetup').classList.contains('hide') ? $('setupMessage')
+    : !$('inviteActivation').classList.contains('hide') ? $('activationMessage')
+    : context ? $('message') : $('authMessage');
   target.textContent = text;
   target.className = 'notice ' + tone;
 }
@@ -80,6 +84,7 @@ function closeDrawer(restoreFocus = false) {
   if (restoreFocus) $('menuToggle').focus();
 }
 function setTab(name) {
+  if (name === 'flex') { setDayMode('flex'); name = 'daily'; }
   if (!titles[name] || name === 'owner' && !context?.platform_admin) return;
   if (personalOnly() && !['mytips','access'].includes(name)) name = 'mytips';
   if (name === 'mytips' && !hasWorkerLink()) name = 'access';
@@ -94,7 +99,6 @@ function setTab(name) {
   closeDrawer();
   if (name === 'guide') renderGuide();
   if (name === 'distribution') renderPayouts();
-  if (name === 'flex') renderFlex();
   if (name === 'access') void loadTeam();
   if (name === 'owner') void loadPlatform();
 }
@@ -110,7 +114,7 @@ function updatePermissions() {
   $('myTipsNav').classList.toggle('hide', !hasWorkerLink());
   $('viewGlobalTips').classList.toggle('hide', !rid || personalOnly());
   $('membershipCard').classList.toggle('hide', personalOnly());
-  ['home','daily','flex','distribution','history','staff','guide'].forEach(name => {
+  ['home','daily','distribution','history','staff','guide'].forEach(name => {
     document.querySelector(`[data-tab="${name}"]`).classList.toggle('hide', personalOnly());
   });
   document.querySelector('.side-help').classList.toggle('hide', personalOnly());
@@ -121,6 +125,8 @@ function updatePermissions() {
   $('restaurantDetailsPanel').classList.toggle('hide', !rid);
   $('restaurantEditName').disabled = !restaurantOwner;
   $('saveRestaurantDetails').disabled = !restaurantOwner;
+  $('restaurantBusinessFields').classList.toggle('hide', !restaurantOwner);
+  document.querySelectorAll('[data-business-field]').forEach(el => el.disabled = !restaurantOwner);
   $('restaurantEditHelp').textContent = restaurantOwner
     ? 'Puedes actualizar el nombre de este local sin modificar las jornadas ni las propinas.'
     : 'Solo el propietario de este restaurante puede cambiar su nombre.';
@@ -134,6 +140,7 @@ function renderAccountSettings() {
   $('accountPhone').value = user.user_metadata?.phone || '';
   $('accountEmailReadonly').value = user.email || '';
   $('restaurantEditName').value = currentRestaurant()?.name || '';
+  applyBusinessDetails();
   updatePermissions();
 }
 function setSettingsStatus(text, kind = 'success') {
@@ -142,7 +149,7 @@ function setSettingsStatus(text, kind = 'success') {
   target.className = 'notice '+kind;
 }
 function resetData() {
-  areas = []; workers = []; days = []; shifts = []; payouts = []; flexShifts = []; flexPayouts = []; membershipContext = []; myTips = []; myTipsLoaded = false;
+  areas = []; workers = []; days = []; shifts = []; payouts = []; flexShifts = []; flexPayouts = []; restaurantBusiness = {}; restaurantBusinessFor = ''; membershipContext = []; myTips = []; myTipsLoaded = false;
   resetWorkerForm();
   $('myTipsFrom').value = ''; $('myTipsTo').value = '';
   $('myTipsStatus').textContent = '';
@@ -158,13 +165,26 @@ async function init() {
   if (version !== authVersion) return;
   user = result.session?.user || null;
   if (!user) {
+    $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
     context = null; rid = ''; loadVersion++; resetData();
     $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('sandboxCheckoutPanel').classList.add('hide'); $('auth').classList.remove('hide'); $('loading').classList.add('hide');
     return;
   }
-  const nextContext = await call('propina_account_context');
+  let nextContext = await call('propina_account_context');
   if (version !== authVersion) return;
-  context = nextContext;
+  const token=String(user.user_metadata?.propina_invitation||'');
+  inviteError='';
+  if (!nextContext.can_create && !(nextContext.restaurants||[]).length
+      && !user.user_metadata?.turnia_registration && /^[a-f0-9]{64}$/.test(token)) {
+    try {
+      await call('propina_accept_invitation',{token});
+      if(version !== authVersion)return;
+      nextContext=await call('propina_account_context');
+      if(version !== authVersion)return;
+      try { const updated=check(await sb.auth.updateUser({data:{propina_invitation:null}}));if(updated?.user)user=updated.user; } catch {}
+    } catch (error) { inviteError=errorText(error); }
+  }
+  context=nextContext;
   // A newly registered customer never enters the operations dashboard unless
   // the server has granted restaurant access after validating the payment.
   // User metadata is only a UX hint; actual authorization stays in Supabase RLS.
@@ -204,11 +224,27 @@ async function init() {
   $('profileName').textContent = name;
   $('profileRole').textContent = context.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
   renderAccountSettings();
+  if (rid && currentRestaurant()?.role === 'owner') void loadRestaurantBusiness(rid);
   $('avatar').textContent = name.split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase();
   $('greeting').textContent = context.platform_admin ? 'Hola, Nicolás.' : 'Tu equipo. Cada turno.';
   $('todayLabel').textContent = new Date().toLocaleDateString('es-CL', {weekday:'long',day:'numeric',month:'long'});
   $('auth').classList.add('hide'); $('loading').classList.add('hide');
+  $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
   $('app').classList.toggle('hide', recoveryMode);
+  if (!rid && !context.platform_admin && !recoveryMode) {
+    $('app').classList.add('hide');
+    if (context.can_create) {
+      $('restaurantSetup').classList.remove('hide');
+      $('setupAccountEmail').value=user.email||'';
+      if (!$('setupManagerName').value) $('setupManagerName').value=context.display_name===user.email?'':context.display_name||'';
+      if (!$('setupContactEmail').value) $('setupContactEmail').value=user.email||'';
+    } else {
+      $('inviteActivation').classList.remove('hide');
+      $('activationMessage').textContent=inviteError||'Tu cuenta está confirmada. Introduce el código para continuar.';
+      $('activationMessage').className='notice '+(inviteError?'error':'info');
+    }
+    updatePermissions();return;
+  }
   updatePermissions();
   readGuideProgress();
   if (rid) await load(); else resetData();
@@ -256,6 +292,15 @@ function renderStaff() {
   $('workers').innerHTML = workers.map(w => `<tr><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><span class="badge ${w.active ? '' : 'gray'}">${w.active ? 'Activo' : 'Inactivo'}</span></td><td>${canEdit() ? `<button class="ghost small" data-toggle-worker="${safe(w.id)}">${w.active ? 'Desactivar' : 'Reactivar'}</button>` : ''}</td></tr>`).join('') || emptyRow(4,'<strong>Aún no hay personas en tu equipo</strong>Agrega su nombre y el área donde trabajan.');
 }
 
+function setDayMode(mode) {
+  const flexible=mode==='flex';
+  $('dayEntryMode').value=flexible?'flex':'classic';
+  $('classicDayPanel').classList.toggle('hide',flexible);
+  $('flex').classList.toggle('hide',!flexible);
+  $('dayState').classList.toggle('hide',flexible);
+  if(flexible)renderFlex();else renderDay();
+}
+$('dayEntryMode').onchange=()=>setDayMode($('dayEntryMode').value);
 function selectedFlexShift() {
   return flexShifts.find(s => s.work_date === $('flexDate').value && s.shift_code === $('flexShiftCode').value);
 }
@@ -629,7 +674,8 @@ bind('register', async () => {
   if (!/^[a-f0-9]{64}$/.test(token)) throw Error('Pega tu código completo: debe contener 64 caracteres.');
   if (!$('email').checkValidity() || !$('email').value || $('password').value.length < 8) throw Error('Ingresa un correo válido y una contraseña de al menos 8 caracteres.');
   check(await sb.auth.signUp({email:$('email').value.trim(),password:$('password').value,options:{emailRedirectTo:location.origin+'/',data:{propina_invitation:token}}}));
-  msg('Revisa tu correo y confirma tu cuenta. Después inicia sesión y activa tu invitación en Accesos y ajustes.','success');
+  $('password').value=''; $('invite').value='';
+  msg('Confirma tu correo y vuelve a iniciar sesión. Activaremos tu código automáticamente y podrás configurar tu restaurante.','success');
 });
 bind('resendConfirmation', async () => {
   const email=$('email').value.trim();
@@ -697,7 +743,8 @@ bind('saveRestaurantDetails', async () => {
   setSettingsStatus('El nombre de tu restaurante se actualizó para todo el equipo.');
 });
 async function logout() {
-  check(await sb.auth.signOut({scope:'local'})); context = null; user = null; rid = ''; loadVersion++;
+  check(await sb.auth.signOut({scope:'local'}));
+  $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide'); context = null; user = null; rid = ''; loadVersion++;
   resetData(); closeDrawer(); setTab('home'); $('settingsStatus').textContent = ''; $('settingsStatus').className = 'notice hide'; $('currentAccountPassword').value = ''; $('nextAccountPassword').value = ''; $('nextAccountPasswordConfirm').value = ''; $('password').value = ''; $('invite').value = ''; $('acceptToken').value = '';
   $('authMessage').textContent = ''; $('message').textContent = ''; await init();
 }
@@ -785,6 +832,7 @@ bind('sandboxPay', async () => {
 });
 $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData(); renderAccountSettings();
+  if(currentRestaurant()?.role==='owner')void loadRestaurantBusiness(rid);
   if (tab === 'access') void loadTeam();
   $('profileRole').textContent = context?.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
   setTab(personalOnly() ? 'mytips' : tab === 'mytips' && !hasWorkerLink() ? 'home' : tab);
@@ -890,6 +938,7 @@ bind('acceptInvite', async () => {
   if (!/^[a-f0-9]{64}$/.test(token)) throw Error('Pega el código completo de 64 caracteres.');
   await call('propina_accept_invitation',{token}); $('acceptToken').value = '';
   await init();
+  if (!rid && context?.can_create && !context?.platform_admin) { msg('Código activado. Completa tu restaurante para continuar.','success'); return; }
   if (personalOnly()) setTab('mytips');
   else { guideIndex = 0; guideDone = false; saveGuideProgress(); setTab('guide'); }
   msg('Acceso activado. Bienvenido a Turnia.','success');
@@ -914,6 +963,7 @@ sb.auth.onAuthStateChange(event => {
     recoveryMode = true; $('auth').classList.add('hide'); $('app').classList.add('hide'); $('loading').classList.add('hide'); $('recovery').classList.remove('hide');
   }
   if (event === 'SIGNED_OUT') {
+    $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
     authVersion++; teamVersion++; platformVersion++;
     platformRestaurants = []; platformInvitations = [];
     $('platformRestaurants').innerHTML = ''; $('platformInvitations').innerHTML = '';
