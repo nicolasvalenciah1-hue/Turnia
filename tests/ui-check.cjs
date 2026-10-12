@@ -85,7 +85,7 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=historial-unificado-20261012-2'),'Styles asset is versioned');
+  assert(html.includes('styles.css?v=unified-onboarding-20261012-1'),'Styles asset is versioned');
   assert(html.includes('app.js?v=historial-unificado-20261012-2'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v7'),'App shell cache version bumped');
