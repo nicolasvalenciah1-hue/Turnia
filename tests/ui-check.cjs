@@ -25,13 +25,14 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const sb={auth:{
     getSession:async()=>({data:{session}}),
     onAuthStateChange:fn=>{authChange=fn;},
-    signInWithPassword:async()=>{session={user};return {data:{session}};},
+    signInWithPassword:async args=>{calls.push(['signInWithPassword',args]);session={user};return {data:{session}};},
     signOut:async()=>{session=null;authChange('SIGNED_OUT');return {data:{}};},
     signUp:async args=>{calls.push(['signup',args]);return {data:{}};},
-    resend:async args=>{calls.push(['resend',args]);return {data:{}};},resetPasswordForEmail:async()=>({data:{}}),updateUser:async args=>{calls.push(['updateUser',args]);return {data:{user}};}
+    resend:async args=>{calls.push(['resend',args]);return {data:{}};},resetPasswordForEmail:async()=>({data:{}}),updateUser:async args=>{calls.push(['updateUser',args]);if(args.data){user.user_metadata={...user.user_metadata,...args.data};context.display_name=args.data.display_name||context.display_name;}return {data:{user}};}
   },rpc:async(name,args)=>{
     calls.push([name,args]);
     if(name==='propina_account_context')return {data:context};
+    if(name==='propina_update_restaurant_name'){const r=context.restaurants.find(r=>r.id===args.p_restaurant_id);if(r)r.name=args.p_name;return {data:{id:args.p_restaurant_id,name:args.p_name}};}
     if(name==='turnia_registration_status')return {data:{status:'pending_payment',restaurant_name:'Restaurante de prueba'}};
     if(name==='turnia_sandbox_checkout_available')return {data:false};
     if(name==='propina_membership_context')return {data:[{restaurant_id:'r1',status:'active',payment_status:'trial',days_remaining:20,expires_at:'2026-11-01'}]};
@@ -53,11 +54,32 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=registro-v1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=confirm-email-v1'),'App asset is versioned');
+  assert(html.includes('styles.css?v=account-settings-20261012-1'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=account-settings-20261012-1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v3'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
+  // Personal settings can be used by every logged-in user.
+  a.d.querySelector('[data-tab="access"]').click();
+  assert.equal(a.d.querySelector('#accountDisplayName').value,'Nicolás Valencia');
+  assert(a.d.querySelector('#accountEmailReadonly').readOnly);
+  a.d.querySelector('#accountDisplayName').value='Camila Sánchez';
+  a.d.querySelector('#accountPhone').value='+56 9 4444 4444';
+  a.d.querySelector('#saveAccountProfile').click();await flush();
+  assert(a.calls.some(x=>x[0]==='updateUser' && x[1].data?.display_name==='Camila Sánchez' && x[1].data?.phone==='+56 9 4444 4444'),'Profile saved using authenticated Supabase Auth');
+  assert.equal(a.d.querySelector('#profileName').textContent,'Camila Sánchez');
+  a.d.querySelector('#currentAccountPassword').value='OldPassword123';
+  a.d.querySelector('#nextAccountPassword').value='NewPassword123';
+  a.d.querySelector('#nextAccountPasswordConfirm').value='NewPassword123';
+  a.d.querySelector('#changeAccountPassword').click();await flush();
+  assert(a.calls.some(x=>x[0]==='signInWithPassword' && x[1].password==='OldPassword123'),'Current password checked on server');
+  assert(a.calls.some(x=>x[0]==='updateUser' && x[1].password==='NewPassword123'),'Password update through Supabase Auth');
+  assert.equal(a.d.querySelector('#currentAccountPassword').value,'','Old password is cleared after success');
+  a.d.querySelector('#restaurantEditName').value='Restaurante Nuevo';
+  a.d.querySelector('#saveRestaurantDetails').click();await flush();
+  assert(a.calls.some(x=>x[0]==='propina_update_restaurant_name' && x[1].p_restaurant_id==='r1' && x[1].p_name==='Restaurante Nuevo'),'Restaurant updated via owner RPC');
+  assert.equal(a.d.querySelector('#restaurant').selectedOptions[0].textContent,'Restaurante Nuevo','Renamed restaurant appears in selector');
+
   assert(!a.d.querySelector('#ownerNav').classList.contains('hide'));
   for(const name of ['home','daily','distribution','history','staff','access','guide','owner']){
     a.d.querySelector(`[data-tab="${name}"]`).click(); assert(!a.d.getElementById(name).classList.contains('hide'),name+' navigation');
@@ -95,6 +117,10 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   side.dom.window.close();
   const b=await app({platform:false,role:'viewer'});
   assert(b.d.querySelector('#saveDay').disabled,'Viewer cannot save');
+  assert(b.d.querySelector('#saveRestaurantDetails').disabled,'Viewer cannot rename restaurant');
+  assert(b.d.querySelector('#restaurantEditName').disabled,'Viewer cannot edit restaurant field');
+  assert(!b.d.querySelector('#saveAccountProfile').disabled,'Viewer can update own personal profile');
+
   assert(b.d.querySelector('#ownerNav').classList.contains('hide'));assert(b.d.querySelector('#staffInvitePanel').classList.contains('hide'));
   assert(!b.d.querySelector('[data-update-area]'));assert(!b.d.querySelector('[data-toggle-worker]'));b.dom.window.close();
   const c=await app({platform:false,restaurant:false,completed:false});
