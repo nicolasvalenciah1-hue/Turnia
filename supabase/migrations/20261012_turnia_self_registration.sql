@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS propina_private.turnia_runtime_flags (
   id integer PRIMARY KEY DEFAULT 1 CHECK(id=1),
   self_registration_enabled boolean NOT NULL DEFAULT FALSE,
   automatic_activation_enabled boolean NOT NULL DEFAULT FALSE,
+  sandbox_checkout_enabled boolean NOT NULL DEFAULT FALSE,
   allow_sandbox_activations boolean NOT NULL DEFAULT FALSE,
   allow_live_activations boolean NOT NULL DEFAULT FALSE
 );
