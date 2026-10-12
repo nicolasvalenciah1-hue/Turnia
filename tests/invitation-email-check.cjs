@@ -4,10 +4,10 @@ const vm = require('node:vm');
 const {stripTypeScriptTypes} = require('node:module');
 const {JSDOM,VirtualConsole} = require('jsdom');
 const flush = () => new Promise(resolve => setTimeout(resolve, 25));
-async function account({existing=false,invalid=false}={}) {
+async function account({existing=false,invalid=false,owner=false}={}) {
   const calls=[];
   const dom=new JSDOM(fs.readFileSync('dist/invitacion.html','utf8'),{url:'https://turnia-kkbm.onrender.com/invitacion.html?codigo='+'a'.repeat(64),runScripts:'outside-only',virtualConsole:new VirtualConsole()});
-  const sb={auth:{getSession:async()=>({data:{session:{user:{}}}}),getUser:async()=>({data:{user:{email:'invited@example.com'}}}),updateUser:async args=>{calls.push(['update',args]);return {data:{}};}},rpc:async(fn,args)=>{calls.push([fn,args]);return invalid?{error:{message:'Invitación no disponible'}}:{data:{needs_password:!existing}};}};
+  const sb={auth:{getSession:async()=>({data:{session:{user:{}}}}),getUser:async()=>({data:{user:{email:'invited@example.com',user_metadata:{display_name:'Invitado'}}}}),updateUser:async args=>{calls.push(['update',args]);return {data:{}};}},rpc:async(fn,args)=>{calls.push([fn,args]);return invalid?{error:{message:'Invitación no disponible'}}:{data:fn==='propina_accept_invitation'?{role:owner?'restaurant_owner':'admin'}:fn==='propina_create_restaurant'?'r-new':{needs_password:!existing}};}};
   dom.window.supabase={createClient:()=>sb};dom.window.eval(fs.readFileSync('dist/invitacion.js','utf8'));await flush();
   const d=dom.window.document;
   assert.equal(dom.window.location.search,'','Code removed from URL');
@@ -17,8 +17,13 @@ async function account({existing=false,invalid=false}={}) {
   d.querySelector('#invitationName').value='Invitado';d.querySelector('#invitationPassword').value='SafePassword123';d.querySelector('#invitationPasswordConfirm').value='Mismatch';
   if(!existing){d.querySelector('#createInvitationAccount').dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await flush();assert(!calls.some(c=>c[0]==='update'),'Mismatch cannot change password');}
   d.querySelector('#invitationPasswordConfirm').value='SafePassword123';
+  if (owner) { d.querySelector('#invitationRestaurantName').value='Restaurante Piloto'; d.querySelector('#invitationPhone').value='+56 9 5555 5555'; }
   d.querySelector('#createInvitationAccount').dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await flush();
   assert(calls.some(c=>c[0]==='propina_accept_invitation'));
+  if (owner) {
+    assert(calls.some(c=>c[0]==='propina_create_restaurant'&&c[1].restaurant_name==='Restaurante Piloto'),'Owner restaurant created automatically');
+    assert(calls.some(c=>c[0]==='propina_update_restaurant_business_profile'&&c[1].profile.phone==='+56 9 5555 5555'),'Contact phone saved automatically');
+  } else assert(!calls.some(c=>c[0]==='propina_create_restaurant'),'Worker invitations do not create restaurants');
   assert.equal(calls.filter(c=>c[0]==='update'&&c[1].password).length,existing?0:1,'Existing password is preserved');
   assert(calls.some(c=>c[0]==='update'&&c[1].data.turnia_invitation_setup===null));
   dom.window.close();
@@ -56,4 +61,4 @@ async function automaticEmail() {
   assert.equal(sent[2][1].body.token,invite.token);
   a.dom.window.close();
 }
-(async()=>{await account();await account({existing:true});await account({invalid:true});await server();await server({existing:true});await server({smtpError:true});await server({claimError:true});await server({invalidJwt:true});await automaticEmail();console.log('PASS: automatic invitation email, same-code retry, code/password validation, existing account, authorized destination, SMTP failure and invalid session. Simulated email; no real messages sent.');})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{await account();await account({owner:true});await account({existing:true});await account({invalid:true});await server();await server({existing:true});await server({smtpError:true});await server({claimError:true});await server({invalidJwt:true});await automaticEmail();console.log('PASS: automatic invitation email, same-code retry, code/password validation, existing account, authorized destination, SMTP failure and invalid session. Simulated email; no real messages sent.');})().catch(e=>{console.error(e);process.exitCode=1;});
