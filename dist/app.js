@@ -21,6 +21,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, 'sb_publishable_uT_FeTqwfX
 });
 let context = null, user = null, rid = '', areas = [], workers = [], days = [], shifts = [], payouts = [];
 let myTips = [], myTipsLoaded = false;
+let flexShifts = [], flexPayouts = [];
 let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = false;
 let guideIndex = 0, guideDone = false;
 let authVersion = 0, teamVersion = 0, platformVersion = 0;
@@ -41,7 +42,7 @@ const personalOnly = () => currentRestaurant()?.read_scope === 'personal' && cur
 const hasWorkerLink = () => !!currentRestaurant()?.worker_id;
 const canManageTeam = () => !!rid && currentRestaurant()?.role === 'owner';
 const roleLabel = role => ({owner:'Propietario del local',admin:'Administrador del local',viewer:'Solo consulta'}[role] || 'Cliente');
-const titles = {mytips:'Mis propinas',home:'Inicio',daily:'Registrar día',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',guide:'Guía de uso'};
+const titles = {mytips:'Mis propinas',home:'Inicio',daily:'Registrar día',flex:'Turnos AM / PM',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',guide:'Guía de uso'};
 function msg(text = '', tone = 'info') {
   const target = recoveryMode ? $('recoveryMessage') : context ? $('message') : $('authMessage');
   target.textContent = text;
@@ -93,12 +94,14 @@ function setTab(name) {
   closeDrawer();
   if (name === 'guide') renderGuide();
   if (name === 'distribution') renderPayouts();
+  if (name === 'flex') renderFlex();
   if (name === 'access') void loadTeam();
   if (name === 'owner') void loadPlatform();
 }
 function updatePermissions() {
   const editing = canEdit() && !loadingData;
   document.querySelectorAll('.edit-only').forEach(el => el.classList.toggle('hide', !canEdit()));
+  $('saveFlexShift').disabled = !editing;
   ['saveDay','addArea','addWorker','amount','shiftHours'].forEach(id => $(id).disabled = !editing);
   $('createRestaurantPanel').classList.toggle('hide', !context?.can_create);
   $('staffInvitePanel').classList.toggle('hide', !canInvite());
@@ -107,7 +110,7 @@ function updatePermissions() {
   $('myTipsNav').classList.toggle('hide', !hasWorkerLink());
   $('viewGlobalTips').classList.toggle('hide', !rid || personalOnly());
   $('membershipCard').classList.toggle('hide', personalOnly());
-  ['home','daily','distribution','history','staff','guide'].forEach(name => {
+  ['home','daily','flex','distribution','history','staff','guide'].forEach(name => {
     document.querySelector(`[data-tab="${name}"]`).classList.toggle('hide', personalOnly());
   });
   document.querySelector('.side-help').classList.toggle('hide', personalOnly());
@@ -139,7 +142,7 @@ function setSettingsStatus(text, kind = 'success') {
   target.className = 'notice '+kind;
 }
 function resetData() {
-  areas = []; workers = []; days = []; shifts = []; payouts = []; membershipContext = []; myTips = []; myTipsLoaded = false;
+  areas = []; workers = []; days = []; shifts = []; payouts = []; flexShifts = []; flexPayouts = []; membershipContext = []; myTips = []; myTipsLoaded = false;
   resetWorkerForm();
   $('myTipsFrom').value = ''; $('myTipsTo').value = '';
   $('myTipsStatus').textContent = '';
@@ -224,15 +227,15 @@ async function load() {
   const version = ++loadVersion, selectedId = rid;
   loadingData = true; updatePermissions();
   myTips = []; myTipsLoaded = false; renderMyTips();
-  if (personalOnly()) { areas = []; workers = []; days = []; shifts = []; payouts = []; membershipContext = []; render(); }
+  if (personalOnly()) { areas = []; workers = []; days = []; shifts = []; payouts = []; flexShifts = []; flexPayouts = []; membershipContext = []; render(); }
   try {
     if (personalOnly()) {
       await loadMyTips(version, selectedId);
       return;
     }
-    const data = await Promise.all(['propina_areas','propina_workers','propina_days','propina_shifts','propina_daily_distribution'].map(t => query(t, selectedId)));
+    const data = await Promise.all(['propina_areas','propina_workers','propina_days','propina_shifts','propina_daily_distribution','propina_flex_shifts','propina_flex_payouts'].map(t => query(t, selectedId)));
     if (version !== loadVersion || selectedId !== rid) return;
-    [areas,workers,days,shifts,payouts] = data;
+    [areas,workers,days,shifts,payouts,flexShifts,flexPayouts] = data;
     areas.sort((a,b) => a.name.localeCompare(b.name,'es'));
     workers.sort((a,b) => a.name.localeCompare(b.name,'es'));
     days.sort((a,b) => b.work_date.localeCompare(a.work_date));
@@ -242,7 +245,7 @@ async function load() {
   } finally { if (version === loadVersion) { loadingData = false; updatePermissions(); } }
 }
 function render() {
-  renderMyTips(); renderStaff(); renderWorkerOptions(); renderDay(); renderHistory(); renderPayouts(); renderHome(); updatePermissions();
+  renderMyTips(); renderStaff(); renderWorkerOptions(); renderFlex(); renderDay(); renderHistory(); renderPayouts(); renderHome(); updatePermissions();
 }
 function renderStaff() {
   const total = areas.reduce((n,a) => n + Number(a.percentage), 0), correct = Math.abs(total-100) < .0001;
@@ -252,6 +255,79 @@ function renderStaff() {
   $('workerArea').innerHTML = areas.map(a => `<option value="${safe(a.id)}">${safe(a.name)}</option>`).join('') || '<option value="">Primero agrega un área</option>';
   $('workers').innerHTML = workers.map(w => `<tr><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><span class="badge ${w.active ? '' : 'gray'}">${w.active ? 'Activo' : 'Inactivo'}</span></td><td>${canEdit() ? `<button class="ghost small" data-toggle-worker="${safe(w.id)}">${w.active ? 'Desactivar' : 'Reactivar'}</button>` : ''}</td></tr>`).join('') || emptyRow(4,'<strong>Aún no hay personas en tu equipo</strong>Agrega su nombre y el área donde trabajan.');
 }
+
+function selectedFlexShift() {
+  return flexShifts.find(s => s.work_date === $('flexDate').value && s.shift_code === $('flexShiftCode').value);
+}
+function renderFlex() {
+  const date=$('flexDate').value,shift=$('flexShiftCode').value,existing=selectedFlexShift();
+  const other=flexShifts.find(s=>s.work_date===date);
+  const savedModes=existing?.rules||other?.rules||[];
+  $('flexAmount').value=existing?String(existing.amount_clp):'';
+  $('flexState').textContent=existing?'Turno '+shift+' guardado. Puedes editarlo.':'Turno '+shift+' aún sin registrar.';
+  $('flexAreaModes').innerHTML=areas.filter(a=>Number(a.percentage)>0).map(a=>{
+    const mode=savedModes.find(m=>m.area_id===a.id)?.mode||'per_shift';
+    return '<div class="flex-area-row"><strong>'+safe(a.name)+' · '+Number(a.percentage)+'%</strong><label>Método <select data-flex-mode="'+safe(a.id)+'" '+(!canEdit()?'disabled':'')+'><option value="per_shift" '+(mode==='per_shift'?'selected':'')+'>Por turno</option><option value="daily_unique" '+(mode==='daily_unique'?'selected':'')+'>Fondo diario · persona única</option></select></label></div>';
+  }).join('')||'<p class="muted">Agrega áreas con porcentajes positivos en Equipo y áreas.</p>';
+  $('flexWorkerRows').innerHTML=workers.filter(w=>w.active||existing?.entries?.some(e=>e.worker_id===w.id)).filter(w=>areas.some(a=>a.id===w.area_id&&Number(a.percentage)>0)).map(w=>{
+    const saved=existing?.entries?.find(e=>e.worker_id===w.id);
+    const weight=saved?Number(saved.weight):1,note=saved?.note||'',disabled=!canEdit()?'disabled':'';
+    return '<div class="flex-person"><label class="check"><input type="checkbox" data-flex-present="'+safe(w.id)+'" '+(saved?'checked':'')+' '+disabled+'><strong>'+safe(w.name)+'</strong> · '+safe(areas.find(a=>a.id===w.area_id)?.name||'')+'</label><div class="flex-person-config"><label>Partes<input type="number" data-flex-weight="'+safe(w.id)+'" min="0.01" max="2" step="0.01" value="'+weight+'" '+disabled+'></label><label>Motivo del acuerdo<input data-flex-note="'+safe(w.id)+'" maxlength="300" placeholder="Motivo si las partes son distintas de 1" value="'+safe(note)+'" '+disabled+'></label><label class="check"><input type="checkbox" data-flex-agreed="'+safe(w.id)+'" '+(saved?.agreed?'checked':'')+' '+disabled+'>Acuerdo confirmado</label></div></div>';
+  }).join('')||'<p class="muted">Agrega trabajadores activos para registrar un turno.</p>';
+  renderFlexResults();renderFlexHistory();updatePermissions();
+}
+function renderFlexResults() {
+  const date=$('flexDate').value,records=flexShifts.filter(s=>s.work_date===date),result=flexPayouts.filter(p=>p.work_date===date);
+  const amount=records.reduce((n,s)=>n+Number(s.amount_clp),0),paid=result.reduce((n,s)=>n+Number(s.calculated_clp),0);
+  $('flexSummary').innerHTML=records.length?'<div><small>Total AM + PM</small><strong>'+clp(amount)+'</strong></div><div><small>Distribuido</small><strong>'+clp(paid)+'</strong></div><div><small>Diferencia</small><strong>'+clp(amount-paid)+'</strong></div>':'<p class="muted">Guarda un turno para ver su reparto.</p>';
+  $('flexPayoutRows').innerHTML=result.map(p=>'<tr><td>'+safe(p.worker_name)+'</td><td>'+safe(p.area_name)+'</td><td>'+(p.group_code==='DIA'?'Fondo diario':safe(p.group_code))+'</td><td>'+Number(p.weight)+'</td><td class="money">'+clp(p.calculated_clp)+'</td></tr>').join('')||emptyRow(5,'Aún no hay reparto flexible para esta fecha.');
+  $('flexExport').disabled=!result.length;
+}
+function renderFlexHistory() {
+  $('flexHistoryRows').innerHTML=flexShifts.slice().sort((a,b)=>b.work_date.localeCompare(a.work_date)||a.shift_code.localeCompare(b.shift_code)).map(s=>'<tr><td>'+safe(dateLabel(s.work_date))+'</td><td>'+safe(s.shift_code)+'</td><td class="money">'+clp(s.amount_clp)+'</td><td><button type="button" class="ghost small" data-flex-open="'+safe(s.work_date)+'" data-flex-code="'+safe(s.shift_code)+'">Abrir →</button></td></tr>').join('')||emptyRow(4,'Sin turnos AM/PM.');
+}
+$('flexDate').onchange=renderFlex;
+$('flexShiftCode').onchange=renderFlex;
+$('flexHistoryRows').onclick=event=>{
+  const button=event.target.closest('[data-flex-open]');if(!button)return;
+  $('flexDate').value=button.dataset.flexOpen;
+  $('flexShiftCode').value=button.dataset.flexCode;
+  renderFlex();
+};
+bind('reloadFlexShift',async()=>{if(!rid)return;await load();msg('Turnos actualizados.','success');});
+bind('saveFlexShift',async()=>{
+  requireEdit();
+  const date=$('flexDate').value,shift=$('flexShiftCode').value,amount=Number($('flexAmount').value);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!['AM','PM'].includes(shift)||$('flexAmount').value===''||!Number.isSafeInteger(amount)||amount<0)throw Error('Revisa fecha, turno y monto.');
+  if(days.some(d=>d.work_date===date))throw Error('Ya existe una jornada clásica para esta fecha.');
+  const eligible=areas.filter(a=>Number(a.percentage)>0);
+  if(!eligible.length||Math.abs(eligible.reduce((n,a)=>n+Number(a.percentage),0)-100)>.000001)throw Error('Los porcentajes deben sumar 100%.');
+  const modes=eligible.map(a=>({area_id:a.id,mode:document.querySelector('[data-flex-mode="'+a.id+'"]').value}));
+  const entries=[...document.querySelectorAll('[data-flex-present]:checked')].map(el=>{
+    const worker_id=el.dataset.flexPresent;
+    return {worker_id,weight:Number(document.querySelector('[data-flex-weight="'+worker_id+'"]').value),note:document.querySelector('[data-flex-note="'+worker_id+'"]').value.trim(),agreed:document.querySelector('[data-flex-agreed="'+worker_id+'"]').checked};
+  });
+  if(!entries.length)throw Error('Selecciona al menos un trabajador.');
+  if(entries.some(e=>!Number.isFinite(e.weight)||e.weight<0.01||e.weight>2))throw Error('Participaciones inválidas: 0,01 a 2.');
+  if(entries.some(e=>e.weight!==1&&(!e.agreed||e.note.length<10)))throw Error('Registra acuerdo y explicación de 10 caracteres o más.');
+  const presentAreas=new Set(entries.map(e=>workers.find(w=>w.id===e.worker_id)?.area_id));
+  if(eligible.some(a=>!presentAreas.has(a.id)))throw Error('Cada área necesita una persona presente.');
+  const other=flexShifts.find(s=>s.work_date===date&&s.shift_code!==shift);
+  if(other&&modes.some(m=>other.rules?.some(r=>r.area_id===m.area_id&&r.mode!==m.mode)))throw Error('AM y PM deben usar el mismo método de reparto por área.');
+  if(selectedFlexShift()&&!window.confirm('¿Reemplazar el turno guardado y recalcular el reparto?'))return;
+  await call('propina_save_flex_shift',{p_restaurant:rid,p_date:date,p_shift:shift,p_amount:amount,p_modes:modes,p_entries:entries});
+  await load();setTab('flex');msg('Turno guardado y reparto actualizado.','success');
+});
+bind('flexExport',async()=>{
+  const date=$('flexDate').value,data=flexPayouts.filter(p=>p.work_date===date);
+  if(!data.length)throw Error('No hay repartos para exportar.');
+  const rows=[['Fecha','Restaurante','Turno/fondo','Trabajador','Área','Partes','Propina CLP'],...data.map(p=>[p.work_date,currentRestaurant()?.name||'',p.group_code,p.worker_name,p.area_name,p.weight,p.calculated_clp])];
+  const csv='\ufeff'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');
+  link.href=url;link.download='turnia_am_pm_'+date+'.csv';document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);msg('Reparto AM/PM exportado.','success');
+});
+
 function renderDay() {
   const current = days.find(d => d.work_date === $('date').value);
   $('amount').value = current ? current.amount_clp : '';
@@ -288,12 +364,19 @@ function renderHistory() {
   $('export').disabled = !data.length;
 }
 function renderHome() {
-  const month = today().slice(0,7), monthDays = days.filter(d => d.work_date.startsWith(month));
-  $('monthTotal').textContent = clp(monthDays.reduce((n,d) => n + Number(d.amount_clp),0));
-  $('monthDays').textContent = monthDays.length;
-  $('activeWorkers').textContent = workers.filter(w => w.active).length;
-  $('monthLabel').textContent = new Date().toLocaleDateString('es-CL',{month:'long',year:'numeric'});
-  $('recentDays').innerHTML = days.slice(0,4).map(d => `<tr><td>${safe(dateLabel(d.work_date))}</td><td class="money">${clp(d.amount_clp)}</td><td><button class="ghost small" data-open-date="${safe(d.work_date)}" aria-label="Ver reparto del ${safe(dateLabel(d.work_date))}">→</button></td></tr>`).join('') || emptyRow(3,'<strong>Tu próxima jornada empieza aquí</strong>Cuando guardes un día, lo encontrarás en este espacio.');
+  const month=today().slice(0,7),classic=days.filter(d=>d.work_date.startsWith(month));
+  const flexible=flexShifts.filter(s=>s.work_date.startsWith(month));
+  const total=classic.reduce((n,d)=>n+Number(d.amount_clp),0)+flexible.reduce((n,s)=>n+Number(s.amount_clp),0);
+  $('monthTotal').textContent=clp(total);
+  $('monthDays').textContent=new Set([...classic.map(d=>d.work_date),...flexible.map(s=>s.work_date)]).size;
+  $('activeWorkers').textContent=workers.filter(w=>w.active).length;
+  $('monthLabel').textContent=new Date().toLocaleDateString('es-CL',{month:'long',year:'numeric'});
+  const recent=days.map(d=>({date:d.work_date,amount:Number(d.amount_clp),flex:false}));
+  const byDate=new Map();
+  flexShifts.forEach(s=>byDate.set(s.work_date,(byDate.get(s.work_date)||0)+Number(s.amount_clp)));
+  byDate.forEach((amount,date)=>recent.push({date,amount,flex:true}));
+  recent.sort((a,b)=>b.date.localeCompare(a.date));
+  $('recentDays').innerHTML=recent.slice(0,4).map(d=>'<tr><td>'+safe(dateLabel(d.date))+(d.flex?' · AM/PM':'')+'</td><td class="money">'+clp(d.amount)+'</td><td><button class="ghost small" '+(d.flex?'data-open-flex-date':'data-open-date')+'="'+safe(d.date)+'" aria-label="Ver reparto">→</button></td></tr>').join('')||emptyRow(3,'<strong>Tu próxima jornada empieza aquí</strong>Cuando guardes un día, lo encontrarás en este espacio.');
 }
 function renderMembershipCard(item) {
   if (!item) { $('membershipCard').innerHTML = '<h2>Membresía del restaurante</h2><p class="muted">' + (rid ? 'No hay información de membresía disponible para este local.' : 'Selecciona o crea un restaurante para consultar su acceso.') + '</p><span class="badge gray">Cobros desactivados</span>'; return; }
@@ -423,8 +506,8 @@ function renderMyTips() {
   const invalid = from && to && from > to;
   const rows = invalid ? [] : myTips.filter(p => (!from || p.work_date >= from) && (!to || p.work_date <= to));
   $('myTipsTotal').textContent = myTipsLoaded ? clp(rows.reduce((n,p) => n + Number(p.calculated_clp),0)) : '—';
-  $('myTipsDays').textContent = myTipsLoaded ? rows.length : '—';
-  $('myTipsRows').innerHTML = rows.map(p => `<tr><td>${safe(dateLabel(p.work_date))}</td><td>${safe(p.hours)} h</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(3,invalid ? 'La fecha Desde debe ser anterior o igual a Hasta.' : myTipsLoaded ? 'No hay jornadas asignadas a tu ficha en este período.' : 'Pulsa Actualizar para consultar tus propinas.');
+  $('myTipsDays').textContent = myTipsLoaded ? new Set(rows.map(p=>p.work_date)).size : '—';
+  $('myTipsRows').innerHTML = rows.map(p => `<tr><td>${safe(dateLabel(p.work_date))}</td><td>${p.kind==='flex' ? safe(p.group_code==='DIA'?'Fondo diario':p.group_code)+' · '+Number(p.weight)+' parte(s)' : safe(p.hours)+' h'}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(3,invalid ? 'La fecha Desde debe ser anterior o igual a Hasta.' : myTipsLoaded ? 'No hay jornadas asignadas a tu ficha en este período.' : 'Pulsa Actualizar para consultar tus propinas.');
 }
 $('myTipsFrom').onchange = renderMyTips; $('myTipsTo').onchange = renderMyTips;
 $('clearMyTips').onclick = () => { $('myTipsFrom').value = ''; $('myTipsTo').value = ''; renderMyTips(); };
@@ -760,6 +843,8 @@ bind('saveDay', async () => {
   $('payoutDate').value = date; await load(); setTab('distribution'); msg('Jornada guardada y reparto calculado.','success');
 });
 function openPayout(e) {
+  const flexible=e.target.closest('[data-open-flex-date]');
+  if(flexible){$('flexDate').value=flexible.dataset.openFlexDate;renderFlex();setTab('flex');return;}
   const el = e.target.closest('[data-open-date]'); if (!el) return;
   $('payoutDate').value = el.dataset.openDate; renderPayouts(); setTab('distribution');
 }
@@ -838,7 +923,7 @@ sb.auth.onAuthStateChange(event => {
     resetData(); $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('recovery').classList.add('hide'); $('auth').classList.remove('hide');
   }
 });
-$('date').value = today(); $('payoutDate').value = today(); setTab('home');
+$('date').value = today(); $('flexDate').value = today(); $('payoutDate').value = today(); setTab('home');
 guard(async () => { try { await init(); } finally { $('loading').classList.add('hide'); if (!context) $('auth').classList.remove('hide'); } });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(() => {});
 })();

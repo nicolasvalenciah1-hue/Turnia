@@ -19,6 +19,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     propina_workers:[{id:'w1',name:'=FORMULA',area_id:'a1',active:true},{id:'w2',name:'Camila',area_id:'a1',active:true}],
     propina_days:[{id:'d1',work_date:'2026-10-01',amount_clp:100000,hours_per_shift:8}],
     propina_shifts:[{day_id:'d1',worker_id:'w1',hours:8},{day_id:'d1',worker_id:'w2',hours:12}],
+    propina_flex_shifts:[],propina_flex_payouts:[],
     propina_daily_distribution:[{day_id:'d1',work_date:'2026-10-01',worker_name:'=FORMULA',area_name:'Garzones',hours:8,percentage:100,calculated_clp:40000},{day_id:'d1',work_date:'2026-10-01',worker_name:'Camila',area_name:'Garzones',hours:12,percentage:100,calculated_clp:60000}]
   };
   let authChange;
@@ -37,6 +38,14 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     if(name==='turnia_registration_status')return {data:{status:'pending_payment',restaurant_name:'Restaurante de prueba'}};
     if(name==='turnia_sandbox_checkout_available')return {data:false};
     if(name==='propina_membership_context')return {data:[{restaurant_id:'r1',status:'active',payment_status:'trial',days_remaining:20,expires_at:'2026-11-01'}]};
+    if(name==='propina_save_flex_shift'){
+      const rules=args.p_modes.map(m=>({...m,area_name:'Garzones',percentage:100}));
+      const entries=args.p_entries.map(e=>({...e,worker_name:e.worker_id==='w2'?'Camila':'=FORMULA',area_id:'a1'}));
+      data.propina_flex_shifts=data.propina_flex_shifts.filter(s=>s.work_date!==args.p_date||s.shift_code!==args.p_shift);
+      data.propina_flex_shifts.push({id:'flex1',restaurant_id:'r1',work_date:args.p_date,shift_code:args.p_shift,amount_clp:args.p_amount,rules,entries});
+      data.propina_flex_payouts=[{restaurant_id:'r1',work_date:args.p_date,group_code:args.p_shift,worker_id:entries[0].worker_id,worker_name:entries[0].worker_name,area_id:'a1',area_name:'Garzones',weight:entries[0].weight,calculated_clp:args.p_amount}];
+      return {data:'flex1'};
+    }
     if(name==='propina_save_day'){
       data.propina_days.push({id:'d2',work_date:args.p_date,amount_clp:args.p_amount,hours_per_shift:args.p_shift_hours});
       data.propina_daily_distribution.push({day_id:'d2',work_date:args.p_date,worker_name:'Camila',area_name:'Garzones',hours:8,percentage:100,calculated_clp:args.p_amount});
@@ -56,10 +65,10 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=worker-links-20261012-2'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=worker-links-20261012-2'),'App asset is versioned');
+  assert(html.includes('styles.css?v=flex-shifts-20261012-2'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=flex-shifts-20261012-2'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
-  assert(sw.includes('turnia-shell-v5'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v6'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
   // Personal settings can be used by every logged-in user.
   a.d.querySelector('[data-tab="access"]').click();
@@ -83,7 +92,7 @@ if (require.main === module) (async()=>{
   assert.equal(a.d.querySelector('#restaurant').selectedOptions[0].textContent,'Restaurante Nuevo','Renamed restaurant appears in selector');
 
   assert(!a.d.querySelector('#ownerNav').classList.contains('hide'));
-  for(const name of ['home','daily','distribution','history','staff','access','guide','owner']){
+  for(const name of ['home','daily','flex','distribution','history','staff','access','guide','owner']){
     a.d.querySelector(`[data-tab="${name}"]`).click(); assert(!a.d.getElementById(name).classList.contains('hide'),name+' navigation');
   }
   a.d.querySelector('#historyRows [data-open-date]').click();
@@ -119,6 +128,7 @@ if (require.main === module) (async()=>{
   side.dom.window.close();
   const b=await app({platform:false,role:'viewer'});
   assert(b.d.querySelector('#saveDay').disabled,'Viewer cannot save');
+  assert(b.d.querySelector('#saveFlexShift').disabled,'Viewer cannot save AM/PM shifts');
   assert(b.d.querySelector('#saveRestaurantDetails').disabled,'Viewer cannot rename restaurant');
   assert(b.d.querySelector('#restaurantEditName').disabled,'Viewer cannot edit restaurant field');
   assert(!b.d.querySelector('#saveAccountProfile').disabled,'Viewer can update own personal profile');
@@ -150,6 +160,41 @@ if (require.main === module) (async()=>{
   d.d.querySelector('#resendConfirmation').click();await flush();
   assert(d.calls.some(x=>x[0]==='resend' && x[1].type==='signup' && x[1].email==='test-recipient@example.test' && x[1].options.emailRedirectTo==='https://turnia.test/'),'Confirmation resend uses the existing address and site URL');
   d.d.querySelector('#register').click();await flush();assert(!d.d.querySelector('#inviteBox').classList.contains('hide'));d.dom.window.close();
+
+
+  // Independent AM/PM mode: enforce a recorded agreement for weighted participants.
+  const flex=await app({platform:false,role:'owner'});
+  flex.d.querySelector('[data-tab="flex"]').click();
+  flex.d.querySelector('#flexDate').value='2026-10-09';
+  flex.d.querySelector('#flexDate').dispatchEvent(new flex.w.Event('change'));
+  flex.d.querySelector('#flexAmount').value='1001';
+  flex.d.querySelector('[data-flex-mode="a1"]').value='daily_unique';
+  const present=flex.d.querySelector('[data-flex-present="w2"]');
+  present.checked=true;
+  flex.d.querySelector('[data-flex-weight="w2"]').value='0.25';
+  flex.d.querySelector('#saveFlexShift').click();await flush();
+  assert(!flex.calls.some(x=>x[0]==='propina_save_flex_shift'),'Special share without agreement must be blocked');
+  assert.match(flex.d.querySelector('#message').textContent,/acuerdo/i);
+  flex.d.querySelector('[data-flex-agreed="w2"]').checked=true;
+  flex.d.querySelector('[data-flex-note="w2"]').value='Aprobado por el equipo para el trabajador en prueba';
+  flex.d.querySelector('#saveFlexShift').click();await flush();
+  const flexSave=flex.calls.find(x=>x[0]==='propina_save_flex_shift');
+  assert(flexSave,'AM/PM saved via dedicated server RPC');
+  assert.equal(flexSave[1].p_shift,'AM');
+  assert.equal(flexSave[1].p_amount,1001);
+  assert.deepEqual(JSON.parse(JSON.stringify(flexSave[1].p_modes)),[{area_id:'a1',mode:'daily_unique'}]);
+  assert.equal(flexSave[1].p_entries[0].weight,0.25);
+  assert(flexSave[1].p_entries[0].agreed);
+  assert.equal(flex.d.querySelector('#flexPayoutRows').children.length,1,'Flexible payout loads after save');
+  assert(!flex.calls.some(x=>x[0]==='propina_save_day'),'Flexible saves cannot overwrite classic days');
+  flex.d.querySelector('#flexDate').value='2026-10-01';
+  flex.d.querySelector('#flexDate').dispatchEvent(new flex.w.Event('change'));
+  flex.d.querySelector('#flexAmount').value='1000';
+  flex.d.querySelector('[data-flex-present="w2"]').checked=true;
+  const savedCount=flex.calls.filter(x=>x[0]==='propina_save_flex_shift').length;
+  flex.d.querySelector('#saveFlexShift').click();await flush();
+  assert.equal(flex.calls.filter(x=>x[0]==='propina_save_flex_shift').length,savedCount,'Cannot duplicate an existing classic date');
+  flex.dom.window.close();
 
   // Password change is accepted only when the supplied current password is valid.
   const invalidCurrent=await app({platform:false,role:'owner'});
