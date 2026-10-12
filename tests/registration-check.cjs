@@ -40,6 +40,10 @@ assert(webhook.includes('payment.status!=="approved"'),'Webhook requires approve
 assert(webhook.includes('subscription.external_reference'),'Webhook ties payment to registered checkout reference');
 assert(webhook.includes('turnia_complete_sandbox_payment'),'Webhook uses server-only RPC');
 assert(checkoutMigration.includes('external_reference text NOT NULL UNIQUE'),'Unique attempts');
+assert(checkoutMigration.includes("IF attempt.status='completed'"),'Webhook retry is idempotent');
+assert(checkoutMigration.includes("'already_active'"),'Repeated payment can succeed without duplicate activation');
+assert(checkout.indexOf('Test seller credentials required') < checkout.indexOf('turnia_prepare_sandbox_checkout'),'Seller validated before checkout reservation');
+assert(checkout.indexOf('Use a separate Mercado Pago test buyer') < checkout.indexOf('turnia_prepare_sandbox_checkout'),'Buyer validated before checkout reservation');
 assert(wrapperMigration.includes("TO service_role"),'Only service can call payment RPC');
 
 
