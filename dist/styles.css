@@ -56,3 +56,13 @@
 .flex-person-config{display:grid;grid-template-columns:minmax(100px,.6fr) minmax(150px,1.6fr) minmax(150px,1fr);gap:14px;align-items:end}
 .flex-person-config>.check{margin:0 0 7px;font-size:12px}
 @media(max-width:850px){.flex-area-row{display:block}.flex-area-row label{margin-top:10px}.flex-person-config{grid-template-columns:1fr}}
+
+/* Cliente nuevo: creación guiada de restaurante */
+.restaurant-setup{max-width:940px;margin:36px auto;padding:30px}
+.restaurant-setup>.grid{margin-bottom:18px}
+.restaurant-setup input[readonly]{background:#f4f6f6;color:#66727b}
+#dayEntryMode{font-weight:650}
+#flex .page-heading{margin-top:16px}
+#flex .page-heading h1{font-size:25px}
+#restaurantBusinessFields{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}
+@media(max-width:750px){.restaurant-setup{margin:12px;padding:19px;border-radius:13px}.restaurant-setup .grid.two{grid-template-columns:1fr}.restaurant-setup .row button{width:100%}#flex .page-heading h1{font-size:21px}}
