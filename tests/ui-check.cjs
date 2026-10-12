@@ -49,6 +49,12 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]); assert.equal(new Set(ids).size,ids.length,'Unique HTML IDs');
   assert(!code.includes('mercadopago-create-subscription')); assert(!code.includes('propina_renew_membership'),'No self-renewal or charging path');
   const a=await app();
+  const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
+  const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
+  assert(html.includes('styles.css?v=logout-v2'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=logout-v2'),'App asset is versioned');
+  assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
+  assert(sw.includes('turnia-shell-v2'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
   assert(!a.d.querySelector('#ownerNav').classList.contains('hide'));
   for(const name of ['home','daily','distribution','history','staff','access','guide','owner']){
