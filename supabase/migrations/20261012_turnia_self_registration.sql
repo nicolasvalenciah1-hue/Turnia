@@ -18,10 +18,10 @@ ALTER TABLE propina_private.turnia_runtime_flags ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE propina_private.turnia_runtime_flags FROM PUBLIC, anon, authenticated;
 
 CREATE OR REPLACE FUNCTION propina_private.self_signup_enabled()
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS $
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS $$
   SELECT COALESCE((SELECT self_registration_enabled
                    FROM propina_private.turnia_runtime_flags WHERE id=1),FALSE)
-$;
+$$;
 REVOKE ALL ON FUNCTION propina_private.self_signup_enabled() FROM PUBLIC,anon,authenticated;
 
 CREATE OR REPLACE FUNCTION propina_private.valid_self_registration(meta jsonb)
