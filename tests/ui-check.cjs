@@ -150,7 +150,59 @@ if (require.main === module) (async()=>{
   d.d.querySelector('#resendConfirmation').click();await flush();
   assert(d.calls.some(x=>x[0]==='resend' && x[1].type==='signup' && x[1].email==='test-recipient@example.test' && x[1].options.emailRedirectTo==='https://turnia.test/'),'Confirmation resend uses the existing address and site URL');
   d.d.querySelector('#register').click();await flush();assert(!d.d.querySelector('#inviteBox').classList.contains('hide'));d.dom.window.close();
-  console.log('PASS: navigation, account name, role controls, save payload, restaurant isolation, history filter, CSV safety, onboarding, recovery and signed-out state. No production writes.');
+
+  // Password change is accepted only when the supplied current password is valid.
+  const invalidCurrent=await app({platform:false,role:'owner'});
+  invalidCurrent.d.querySelector('[data-tab="access"]').click();
+  invalidCurrent.d.querySelector('#currentAccountPassword').value='WrongPassword123';
+  invalidCurrent.d.querySelector('#nextAccountPassword').value='SafeNewPassword123';
+  invalidCurrent.d.querySelector('#nextAccountPasswordConfirm').value='SafeNewPassword123';
+  invalidCurrent.d.querySelector('#changeAccountPassword').click();await flush();
+  assert(!invalidCurrent.calls.some(x=>x[0]==='updateUser' && x[1].password),'Wrong current password must never update the account');
+  assert.match(invalidCurrent.d.querySelector('#settingsStatus').textContent,/no coinciden/i);
+  invalidCurrent.dom.window.close();
+
+  // Change password, sign out, reject the old password and sign in again with the new one.
+  const relog=await app({platform:false,role:'owner'});
+  relog.d.querySelector('[data-tab="access"]').click();
+  relog.d.querySelector('#currentAccountPassword').value='OldPassword123';
+  relog.d.querySelector('#nextAccountPassword').value='ValidNewPassword123';
+  relog.d.querySelector('#nextAccountPasswordConfirm').value='ValidNewPassword123';
+  relog.d.querySelector('#changeAccountPassword').click();await flush();
+  assert(!relog.d.querySelector('#testPasswordLogin').classList.contains('hide'),'Show a manual login verification after password update');
+  relog.d.querySelector('#testPasswordLogin').click();await flush();
+  assert(!relog.d.querySelector('#auth').classList.contains('hide'),'Password verification first signs out');
+  assert.equal(relog.d.querySelector('#email').value,'owner@example.test');
+  relog.d.querySelector('#password').value='OldPassword123';
+  relog.d.querySelector('#loginForm').dispatchEvent(new relog.w.Event('submit',{bubbles:true,cancelable:true}));await flush();
+  assert.match(relog.d.querySelector('#authMessage').textContent,/no coinciden/i,'Old password must be rejected');
+  assert(relog.d.querySelector('#app').classList.contains('hide'),'Wrong password does not enter the app');
+  relog.d.querySelector('#password').value='ValidNewPassword123';
+  relog.d.querySelector('#loginForm').dispatchEvent(new relog.w.Event('submit',{bubbles:true,cancelable:true}));await flush();
+  assert(!relog.d.querySelector('#app').classList.contains('hide'),'New password signs in successfully');
+  assert.equal(relog.context.restaurants.length,2,'All restaurant memberships survive password changes');
+  assert(!relog.calls.some(x=>x[0]==='propina_save_day'),'Password regression test does not write any tips');
+  relog.dom.window.close();
+
+  // Role access: admins may edit shifts but cannot change ownership or team members.
+  const admin=await app({platform:false,role:'admin'});
+  assert(!admin.d.querySelector('#saveDay').disabled,'Restaurant administrator can save a shift');
+  assert(admin.d.querySelector('#teamAccessPanel').classList.contains('hide'),'Admin cannot manage owner-only access');
+  assert(admin.d.querySelector('#workerLinkPanel').classList.contains('hide'),'Admin cannot link worker accounts');
+  assert(admin.d.querySelector('#saveRestaurantDetails').disabled,'Admin cannot rename owner restaurant');
+  admin.dom.window.close();
+
+  // Personal-only workers can view personal tips but cannot fetch everyone else's shifts.
+  const worker=await app({platform:false,role:'viewer',restaurantContext:{read_scope:'personal',worker_id:'w1',worker_name:'Test Worker'},rpcOverrides:{propina_my_tips:async()=>({data:[{work_date:'2026-10-01',hours:8,calculated_clp:40000}]})}});
+  assert(!worker.d.querySelector('#mytips').classList.contains('hide'),'Personal-only worker gets their own tab');
+  assert(worker.d.querySelector('#teamAccessPanel').classList.contains('hide'));
+  assert(worker.d.querySelector('#staff').classList.contains('hide'));
+  assert(!worker.calls.some(x=>x[0]==='query'),'Personal-only worker does not query shared tables');
+  assert(worker.calls.some(x=>x[0]==='propina_my_tips'),'Personal-only worker uses scoped server RPC');
+  assert(worker.d.querySelector('#saveDay').disabled,'Personal-only worker cannot change shifts');
+  worker.dom.window.close();
+
+  console.log('PASS: navigation, account name, role controls, save payload, restaurant isolation, history filter, CSV safety, onboarding, recovery and signed-out state. Role isolation and password re-login tested with mocks. No production writes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 
 module.exports = {app, flush};
