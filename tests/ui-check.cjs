@@ -177,6 +177,7 @@ if (require.main === module) (async()=>{
   for(let i=0;i<10;i++)c.d.querySelector('#guideNext').click();
   assert(JSON.parse(c.w.localStorage.getItem('turnia_guide_v1_test-user')).done);
   assert(c.context.restaurants.some(r=>r.name==='Restaurante Piloto'),'Approved restaurant is visible to its owner');
+  c.d.querySelector('#restartGuide').click();
   assert.equal(c.d.querySelector('#guideProgressText').textContent,'Paso 1 de 10');
   c.authChange('PASSWORD_RECOVERY');assert(!c.d.querySelector('#recovery').classList.contains('hide'));
   c.d.querySelector('#newPassword').value='NewPass1234';c.d.querySelector('#confirmPassword').value='NewPass1234';c.d.querySelector('#savePassword').click();await flush();
