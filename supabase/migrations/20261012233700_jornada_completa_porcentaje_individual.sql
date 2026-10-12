@@ -173,7 +173,7 @@ BEGIN
       RAISE EXCEPTION 'Participación inválida: usa un porcentaje entre 1 y 200.';
     END IF;
     IF participation <> 1 AND (NOT accepted OR length(reason) < 10) THEN
-      RAISE EXCEPTION 'Una participación distinta de 100% requiere acuerdo confirmado y motivo de al menos 10 caracteres.';
+      RAISE EXCEPTION 'Una participación distinta de 100%% requiere acuerdo confirmado y motivo de al menos 10 caracteres.';
     END IF;
   END LOOP;
 
