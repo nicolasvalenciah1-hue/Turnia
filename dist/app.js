@@ -27,6 +27,7 @@ let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, 
 let guideIndex = 0, guideDone = false;
 let authVersion = 0, teamVersion = 0, platformVersion = 0;
 let teamMembers = [], teamInvitations = [], platformRestaurants = [], platformInvitations = [];
+let supportTickets = [], ownerSupportTickets = [], selectedSupportTicket = null, supportVersion = 0, ownerSupportVersion = 0;
 const busyButtons = new Set();
 const clp = n => new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP', maximumFractionDigits:0}).format(Number(n) || 0);
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
@@ -43,7 +44,7 @@ const personalOnly = () => currentRestaurant()?.read_scope === 'personal' && cur
 const hasWorkerLink = () => !!currentRestaurant()?.worker_id;
 const canManageTeam = () => !!rid && currentRestaurant()?.role === 'owner';
 const roleLabel = role => ({owner:'Propietario del local',admin:'Administrador del local',viewer:'Solo consulta'}[role] || 'Cliente');
-const titles = {mytips:'Mis propinas',home:'Inicio',daily:'Registrar propinas',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',guide:'Guía de uso'};
+const titles = {mytips:'Mis propinas',home:'Inicio',daily:'Registrar propinas',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',support:'Ayuda y soporte',guide:'Guía de uso'};
 function msg(text = '', tone = 'info') {
   const target = recoveryMode ? $('recoveryMessage')
     : !$('restaurantSetup').classList.contains('hide') ? $('setupMessage')
@@ -89,7 +90,7 @@ function closeDrawer(restoreFocus = false) {
 function setTab(name) {
   if (name === 'flex') { setDayMode('flex'); name = 'daily'; }
   if (!titles[name] || name === 'owner' && !context?.platform_admin) return;
-  if (personalOnly() && !['mytips','access'].includes(name)) name = 'mytips';
+  if (personalOnly() && !['mytips','access','support'].includes(name)) name = 'mytips';
   if (name === 'mytips' && !hasWorkerLink()) name = 'access';
   tab = name;
   document.querySelectorAll('.tab').forEach(el => el.classList.toggle('hide', el.id !== name));
@@ -103,7 +104,8 @@ function setTab(name) {
   if (name === 'guide') renderGuide();
   if (name === 'distribution') renderPayouts();
   if (name === 'access') void loadTeam();
-  if (name === 'owner') void loadPlatform();
+  if (name === 'owner') { void loadPlatform(); void loadOwnerSupport(); }
+  if (name === 'support') void loadSupport();
 }
 function updatePermissions() {
   const editing = canEdit() && !loadingData;
@@ -123,6 +125,8 @@ function updatePermissions() {
   document.querySelector('.side-help').classList.toggle('hide', personalOnly());
   if (personalOnly()) $('onboardingBanner').classList.add('hide');
   $('ownerNav').classList.toggle('hide', !context?.platform_admin);
+  $('supportComposePanel').classList.toggle('hide', !rid);
+  $('sendSupportTicket').disabled = !rid;
   $('adminPanel').classList.toggle('hide', !context?.platform_admin);
   const restaurantOwner = !!rid && currentRestaurant()?.role === 'owner';
   $('restaurantDetailsPanel').classList.toggle('hide', !rid);
@@ -306,6 +310,7 @@ async function init() {
   if (rid) await load(); else resetData();
   if (version !== authVersion) return;
   if (tab === 'access') void loadTeam();
+  if (tab === 'support') void loadSupport();
   if (!rid) {
     setTab('access');
     msg(context.can_create ? 'Tu acceso está aprobado. Crea tu restaurante para comenzar.' : 'Activa tu código de invitación para entrar al restaurante autorizado.');
@@ -948,6 +953,7 @@ $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData(); renderAccountSettings();
   if(currentRestaurant()?.role==='owner')void loadRestaurantBusiness(rid);
   if (tab === 'access') void loadTeam();
+  if (tab === 'support') void loadSupport();
   $('profileRole').textContent = context?.platform_admin ? 'MUTAVIA GROUP · Creador de Turnia' : roleLabel(currentRestaurant()?.role);
   setTab(personalOnly() ? 'mytips' : tab === 'mytips' && !hasWorkerLink() ? 'home' : tab);
   await load();
@@ -1066,6 +1072,114 @@ bind('acceptInvite', async () => {
   else { guideIndex = 0; guideDone = false; saveGuideProgress(); setTab('guide'); }
   msg('Acceso activado. Bienvenido a Turnia.','success');
 });
+
+const supportStatusLabels = {pendiente:'Pendiente',en_revision:'En revisión',resuelto:'Resuelto'};
+const supportCategoryLabels = {consulta:'Consulta',error:'Problema técnico',mejora:'Sugerencia',otro:'Otro'};
+const supportStamp = value => value ? new Date(value).toLocaleString('es-CL',{dateStyle:'short',timeStyle:'short'}) : '—';
+const supportShortId = value => String(value||'').slice(0,8).toUpperCase();
+function supportStatus(message, error=false) {
+  $('supportListStatus').textContent=message;
+  $('supportListStatus').className=error?'notice error spaced':'state-text';
+}
+function supportCard(ticket, owner=false) {
+  const name = owner ? (platformRestaurants.find(r=>r.id===ticket.restaurant_id)?.name||'Restaurante')+' · ' : '';
+  return `<div class="support-ticket-card">
+    <div><strong>${safe(name)}#${safe(supportShortId(ticket.id))} · ${safe(ticket.subject)}</strong><p class="muted">${safe(supportCategoryLabels[ticket.category]||'Consulta')} · ${safe(supportStamp(ticket.created_at))}</p></div>
+    <div><span class="badge gray">${safe(supportStatusLabels[ticket.status]||ticket.status)}</span>
+    <button class="secondary small" type="button" data-support-open="${safe(ticket.id)}">Ver conversación</button></div>
+  </div>`;
+}
+async function loadSupport() {
+  const version=++supportVersion, restaurantId=rid;
+  selectedSupportTicket=null;
+  $('supportThread').classList.add('hide');
+  if (!restaurantId) {supportTickets=[];$('supportTickets').innerHTML='';supportStatus('Selecciona un restaurante para ver sus solicitudes.');return;}
+  supportStatus('Cargando tus solicitudes…');
+  try {
+    const response=await sb.from('turnia_support_tickets').select('*').eq('restaurant_id',restaurantId);
+    const list=check(response)||[];
+    if (version!==supportVersion || rid!==restaurantId) return;
+    supportTickets=list.slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+    $('supportTickets').innerHTML=supportTickets.map(item=>supportCard(item)).join('')||'<p class="muted">Todavía no tienes solicitudes.</p>';
+    supportStatus(supportTickets.length+' solicitud(es) para el restaurante seleccionado.');
+  } catch(e){if(version===supportVersion)supportStatus('No se pudieron cargar las solicitudes: '+errorText(e),true);}
+}
+async function loadOwnerSupport() {
+  const version=++ownerSupportVersion;
+  if (!context?.platform_admin) return;
+  $('ownerSupportStatus').textContent='Cargando reportes…';
+  try {
+    const response=await sb.from('turnia_support_tickets').select('*');
+    const list=check(response)||[];
+    if (version!==ownerSupportVersion || !context?.platform_admin)return;
+    ownerSupportTickets=list.slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+    $('ownerSupportTickets').innerHTML=ownerSupportTickets.map(t=>supportCard(t,true)).join('')||'<p class="muted">Todavía no hay solicitudes de soporte.</p>';
+    $('ownerSupportStatus').textContent=ownerSupportTickets.filter(t=>t.status!=='resuelto').length+' solicitudes pendientes o en revisión · '+ownerSupportTickets.length+' totales.';
+  }catch(e){if(version===ownerSupportVersion)$('ownerSupportStatus').textContent='No se pudo cargar soporte: '+errorText(e);}
+}
+async function openSupportTicket(id){
+  const ticket=[...supportTickets,...ownerSupportTickets].find(t=>t.id===id);
+  if(!ticket)throw Error('Actualiza la lista de solicitudes.');
+  selectedSupportTicket=ticket;
+  const messages=check(await sb.from('turnia_support_messages').select('*').eq('ticket_id',id))||[];
+  if(selectedSupportTicket?.id!==id)return;
+  // Always switch to the support tab so owner can answer tickets for any restaurant.
+  tab='support';
+  document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('hide',el.id!=='support'));
+  document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab==='support'));
+  $('currentSection').textContent='Ayuda y soporte';
+  $('supportThread').classList.remove('hide');
+  $('supportThreadTitle').textContent='#'+supportShortId(ticket.id)+' · '+ticket.subject;
+  $('supportThreadMeta').textContent=(supportCategoryLabels[ticket.category]||'Consulta')+' · '+(supportStatusLabels[ticket.status]||ticket.status)+' · '+supportStamp(ticket.created_at);
+  $('supportThreadMessages').innerHTML=messages.slice().sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))).map(m=>
+    `<div class="support-message"><small>${safe(m.author_id===user?.id?'Tú':'Equipo de soporte / cliente')} · ${safe(supportStamp(m.created_at))}</small><p>${safe(m.body).replace(/\\n/g,'<br>')}</p></div>`
+  ).join('')||'<p class="muted">Aún no hay respuestas. Puedes escribir la primera.</p>';
+  $('supportStatusControls').classList.toggle('hide',!context?.platform_admin);
+  $('supportStatusSelect').value=ticket.status;
+  $('supportReply').value='';$('supportReplyStatus').textContent='';
+  $('supportThread').scrollIntoView?.({behavior:'smooth',block:'start'});
+}
+bind('sendSupportTicket',async()=>{
+  if(!rid)throw Error('Selecciona tu restaurante.');
+  const category=$('supportCategory').value,subject=$('supportSubject').value.trim(),description=$('supportDescription').value.trim();
+  if(subject.length<4||subject.length>150)throw Error('El asunto debe tener entre 4 y 150 caracteres.');
+  if(description.length<10||description.length>5000)throw Error('Describe tu solicitud con al menos 10 caracteres.');
+  const restaurantId=rid;
+  const result=check(await sb.from('turnia_support_tickets').insert({
+    restaurant_id:restaurantId,created_by:user.id,category,subject,description,status:'pendiente'
+  }).select('id').single());
+  if(restaurantId!==rid)return;
+  $('supportSubject').value='';$('supportDescription').value='';
+  $('supportComposeStatus').textContent='Solicitud #'+supportShortId(result.id)+' registrada. Puedes seguirla aquí. El aviso por correo estará disponible cuando se configure el envío.';
+  await loadSupport();
+});
+bind('refreshSupport',loadSupport);
+bind('refreshOwnerSupport',loadOwnerSupport);
+document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-support-open]');
+  if(button)void guard(()=>openSupportTicket(button.dataset.supportOpen),button);
+});
+bind('sendSupportReply',async()=>{
+  if(!selectedSupportTicket)throw Error('Abre una solicitud para responder.');
+  const body=$('supportReply').value.trim(),ticketId=selectedSupportTicket.id;
+  if(body.length<1||body.length>5000)throw Error('La respuesta debe contener entre 1 y 5000 caracteres.');
+  check(await sb.from('turnia_support_messages').insert({ticket_id:ticketId,author_id:user.id,body}));
+  $('supportReplyStatus').textContent='Respuesta enviada.';
+  await openSupportTicket(ticketId);
+  $('supportReplyStatus').textContent='Respuesta enviada.';
+});
+bind('saveSupportStatus',async()=>{
+  if(!context?.platform_admin)throw Error('Solo el propietario de Turnia puede actualizar estados.');
+  if(!selectedSupportTicket)throw Error('Abre una solicitud.');
+  const id=selectedSupportTicket.id,status=$('supportStatusSelect').value;
+  if(!Object.hasOwn(supportStatusLabels,status))throw Error('Estado inválido.');
+  check(await sb.from('turnia_support_tickets').update({status}).eq('id',id).select('id').single());
+  selectedSupportTicket.status=status;
+  $('supportThreadMeta').textContent=(supportCategoryLabels[selectedSupportTicket.category]||'Consulta')+' · '+supportStatusLabels[status]+' · '+supportStamp(selectedSupportTicket.created_at);
+  $('supportReplyStatus').textContent='Estado guardado.';
+  await loadOwnerSupport();
+});
+
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-tab],[data-go]'); if (el) setTab(el.dataset.tab || el.dataset.go);
 });
@@ -1087,7 +1201,7 @@ sb.auth.onAuthStateChange(event => {
   }
   if (event === 'SIGNED_OUT') {
     $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
-    authVersion++; teamVersion++; platformVersion++;
+    authVersion++; teamVersion++; platformVersion++; supportVersion++; ownerSupportVersion++; selectedSupportTicket=null; supportTickets=[]; ownerSupportTickets=[];
     platformRestaurants = []; platformInvitations = [];
     $('platformRestaurants').innerHTML = ''; $('platformInvitations').innerHTML = '';
     ['accountDisplayName','accountPhone','accountEmailReadonly','restaurantEditName','currentAccountPassword','nextAccountPassword','nextAccountPasswordConfirm','newPassword','confirmPassword'].forEach(id => { $(id).value = ''; });
