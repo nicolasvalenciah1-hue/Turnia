@@ -331,7 +331,7 @@ bind('inspectSubscription', async () => {
       notice.textContent='No pudimos verificar el estado directamente en Mercado Pago. Mantendremos los cobros desactivados.';
       return;
     }
-    const yesNo=x=>x===true?'sí':'no';
+    const yesNo=x=>x===true?'sí':x===false?'no':'no verificado';
     const valid=result.eligible_for_payment_test===true;
     const environment= result.environment==='test'?'Prueba confirmado'
       :result.environment==='live'?'Real (NO continuar)':'No verificado';
@@ -339,6 +339,7 @@ bind('inspectSubscription', async () => {
       'Estado de la suscripción: '+String(result.status||'desconocido'),
       'Vendedor de prueba: '+yesNo(result.seller_is_test),
       'Comprador de prueba: '+yesNo(result.buyer_is_test),
+      'Identificador de comprador disponible: '+yesNo(result.payer_id_returned),
       'Monto y moneda correctos: '+yesNo(result.amount_and_currency_match),
       'Orden vinculada a Turnia: '+yesNo(result.reference_matches),
       'Entorno: '+environment,
