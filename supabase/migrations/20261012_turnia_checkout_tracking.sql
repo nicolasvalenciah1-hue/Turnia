@@ -53,13 +53,35 @@ BEGIN
  SELECT * INTO attempt FROM propina_private.turnia_checkout_attempts
  WHERE external_reference=p_reference FOR UPDATE;
  IF NOT FOUND THEN RAISE EXCEPTION 'Orden no registrada'; END IF;
- IF attempt.status <> 'pending' OR attempt.provider_preapproval_id IS DISTINCT FROM p_subscription THEN
-  RAISE EXCEPTION 'Suscripción no coincide con la orden registrada';
- END IF;
  IF p_live_mode IS DISTINCT FROM false OR attempt.mode<>'sandbox'
-    OR p_currency <> 'CLP' OR p_amount<>attempt.price_clp
-    OR p_provider_payment_id IS NULL OR length(p_provider_payment_id)<1 THEN
+    OR p_currency IS DISTINCT FROM 'CLP'
+    OR p_amount IS DISTINCT FROM attempt.price_clp
+    OR p_provider_payment_id IS NULL OR length(p_provider_payment_id)<1
+    OR attempt.provider_preapproval_id IS DISTINCT FROM p_subscription THEN
    RAISE EXCEPTION 'Pago de prueba no verificable';
+ END IF;
+ -- Mercado Pago may retry the same signed notification. Repeated successful
+ -- notifications must not create a second restaurant or return an error.
+ IF attempt.status='completed' THEN
+   IF EXISTS (
+      SELECT 1 FROM propina_private.turnia_verified_payments vp
+      WHERE vp.provider_payment_id=p_provider_payment_id
+        AND vp.external_reference=p_reference
+        AND vp.user_id=attempt.user_id
+        AND vp.applied_at IS NOT NULL
+   ) THEN
+     RETURN jsonb_build_object(
+       'status','already_active',
+       'restaurant_id',(
+         SELECT vp.restaurant_id FROM propina_private.turnia_verified_payments vp
+         WHERE vp.provider_payment_id=p_provider_payment_id
+           AND vp.external_reference=p_reference
+       ));
+   END IF;
+   RAISE EXCEPTION 'Orden completada con una transacción diferente';
+ END IF;
+ IF attempt.status <> 'pending' THEN
+   RAISE EXCEPTION 'Orden no disponible para pago';
  END IF;
  INSERT INTO propina_private.turnia_verified_payments
   (user_id,provider,provider_payment_id,provider_subscription_id,external_reference,
