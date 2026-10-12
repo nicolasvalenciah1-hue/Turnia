@@ -336,6 +336,7 @@ bind('inspectSubscription', async () => {
     const environment= result.environment==='test'?'Indicador de prueba presente'
       :result.environment==='live'?'Indicador de producción (NO continuar)':'No informado por la API';
     const lines=[
+      'Diagnóstico Turnia: versión 2',
       'Estado de la suscripción: '+String(result.status||'desconocido'),
       'Vendedor de prueba: '+yesNo(result.seller_is_test),
       'Comprador de prueba: '+yesNo(result.buyer_is_test),
