@@ -152,7 +152,7 @@ BEGIN
  SELECT p_restaurant,p_date,p_shift,p_amount,v_rules,
     (SELECT jsonb_agg(jsonb_build_object(
       'worker_id',w.id,'worker_name',w.name,'area_id',w.area_id,
-      'weight',(entry.value->>'weight')::numeric,'note',left(btrim(coalesce(entry.value->>'note','')),300)
+      'weight',(entry.value->>'weight')::numeric,'note',left(btrim(coalesce(entry.value->>'note','')),300),'agreed',coalesce((entry.value->>'agreed')::boolean,false)
      ) ORDER BY w.id) FROM jsonb_array_elements(p_entries) entry
      JOIN public.propina_workers w ON w.id=(entry.value->>'worker_id')::uuid AND w.restaurant_id=p_restaurant),
     auth.uid()
