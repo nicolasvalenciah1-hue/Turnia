@@ -74,14 +74,14 @@
 <p class="state-text" id="flexState">Selecciona la fecha y el turno.</p>
 <hr class="divider"><h2>Regla de reparto por área</h2><p class="muted">En «Por turno» el trabajador que participó en ambos recibe de ambos turnos. En «Fondo diario» se suman AM y PM, y cada trabajador cuenta una sola vez durante el día.</p>
 <div id="flexAreaModes" class="flex-area-list"></div>
-<hr class="divider"><h2>Participantes y acuerdos</h2><p class="muted">Participación 1 = parte completa; 0,25 = 25% de una parte; 0,5 = mitad. Para cambiarla, registra el acuerdo y su explicación. Esta casilla declara un acuerdo; no equivale a una votación ni recoge firmas. Una participación 1 también puede aplicarse a cuatro horas si así lo acuerdan.</p>
+<hr class="divider"><h2>Participantes y acuerdos</h2><p class="muted">Configura la participación individual de cada persona en este turno: 100% = participación completa, 75% = 0,75 partes y 25% = 0,25 partes. El porcentaje del área (por ejemplo, el 65% de garzones) no cambia; su fondo se reparte proporcionalmente entre quienes participaron. No es un porcentaje directo del fondo total del área. Para una participación distinta de 100%, registra el acuerdo y su explicación. Esta casilla no recoge firmas. En «Fondo diario», si alguien trabaja AM y PM, se conserva su mayor participación del día.</p>
 <div id="flexWorkerRows" class="flex-workers"></div>
 <div class="row spaced"><button type="button" id="saveFlexShift">Guardar turno y calcular</button><button id="reloadFlexShift" type="button" class="secondary">Actualizar datos</button></div>
 <p class="state-text">Al guardar PM se recalcula el reparto de las áreas con fondo diario, incluidas las del turno AM. Verifica ambos turnos antes de cerrar la jornada.</p>
 </div>
 <div class="panel"><div class="panel-heading"><div><h2>Reparto del día</h2><p class="muted">Resultados en pesos completos, con diferencias de redondeo distribuidas exactamente.</p></div><button id="flexExport" type="button" class="secondary">Exportar este reparto CSV</button></div>
 <div id="flexSummary" class="result-summary"></div>
-<div class="scroll"><table><thead><tr><th>Trabajador</th><th>Área</th><th>Reparto</th><th>Partes</th><th class="money">Monto CLP</th></tr></thead><tbody id="flexPayoutRows"></tbody></table></div></div>
+<div class="scroll"><table><thead><tr><th>Trabajador</th><th>Área</th><th>Reparto</th><th>Participación</th><th class="money">Monto CLP</th></tr></thead><tbody id="flexPayoutRows"></tbody></table></div></div>
 <div class="panel"><h2>Historial de turnos AM/PM</h2><p class="muted">Conserva los turnos registrados por fecha. Selecciona uno para consultarlo o corregirlo.</p><div class="scroll"><table><thead><tr><th>Fecha</th><th>Turno</th><th class="money">Propinas</th><th></th></tr></thead><tbody id="flexHistoryRows"></tbody></table></div></div>
 </div>
 </section>
@@ -177,4 +177,4 @@
 </section>
 <section id="guide" class="tab hide"><div class="page-heading"><div><p class="eyebrow">VAMOS PASO A PASO</p><h1>Tu primer turno en Turnia</h1><p class="muted">Todo lo que necesitas, desde el acceso hasta el primer reparto.</p></div><button id="restartGuide" class="ghost">Reiniciar guía</button></div><div class="panel"><div class="panel-heading"><div><h2>Guía de bienvenida</h2><p id="guideProgressText" class="muted"></p></div><span class="badge">10 pasos</span></div><div class="progress-track"><div id="guideProgress"></div></div><div class="guide-layout"><ol id="guideNav" class="guide-nav"></ol><div class="guide-stage"><div id="guideContent"></div><div class="guide-controls"><button id="guidePrev" class="ghost">← Anterior</button><button id="guideNext">Siguiente →</button></div></div></div></div></section>
 <footer class="footer"><span>© Turnia · Cada turno cuenta · Una creación de MUTAVIA GROUP</span><span>Acceso por invitación · Cobros desactivados</span></footer></main></div></div>
-<noscript><p>Activa JavaScript para acceder a Turnia.</p></noscript><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script><script src="app.js?v=guided-onboarding-20261012-1"></script></body></html>
+<noscript><p>Activa JavaScript para acceder a Turnia.</p></noscript><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script><script src="app.js?v=individual-shares-20261012-1"></script></body></html>
