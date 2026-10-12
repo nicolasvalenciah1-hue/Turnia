@@ -2,6 +2,27 @@
 -- Applied only when explicitly deploying registration; existing invitation flows remain.
 -- To activate customers in future, add a *server-only*, verified-payment webhook.
 -- No RPC here can mark a registration as paid.
+-- Gated rollout. This migration may be installed while the site remains
+-- invitation-only and no payment method is configured.
+CREATE TABLE IF NOT EXISTS propina_private.turnia_runtime_flags (
+  id integer PRIMARY KEY DEFAULT 1 CHECK(id=1),
+  self_registration_enabled boolean NOT NULL DEFAULT FALSE,
+  automatic_activation_enabled boolean NOT NULL DEFAULT FALSE,
+  allow_sandbox_activations boolean NOT NULL DEFAULT FALSE,
+  allow_live_activations boolean NOT NULL DEFAULT FALSE
+);
+INSERT INTO propina_private.turnia_runtime_flags(id)
+VALUES(1) ON CONFLICT(id) DO NOTHING;
+ALTER TABLE propina_private.turnia_runtime_flags ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE propina_private.turnia_runtime_flags FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION propina_private.self_signup_enabled()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS $
+  SELECT COALESCE((SELECT self_registration_enabled
+                   FROM propina_private.turnia_runtime_flags WHERE id=1),FALSE)
+$;
+REVOKE ALL ON FUNCTION propina_private.self_signup_enabled() FROM PUBLIC,anon,authenticated;
+
 CREATE OR REPLACE FUNCTION propina_private.valid_self_registration(meta jsonb)
 RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path TO '' AS $$
   SELECT COALESCE(meta->>'turnia_registration' = 'v1'
@@ -55,7 +76,8 @@ BEGIN
   mail := lower(trim(event->'user'->>'email'));
   token := event->'user'->'user_metadata'->>'propina_invitation';
   IF token IS NULL OR token !~ '^[a-f0-9]{64}$' THEN
-    IF mail IS NOT NULL AND propina_private.valid_self_registration(event->'user'->'user_metadata') THEN
+    IF mail IS NOT NULL AND propina_private.self_signup_enabled()
+      AND propina_private.valid_self_registration(event->'user'->'user_metadata') THEN
       RETURN '{}'::jsonb;
     END IF;
     RETURN jsonb_build_object('error',jsonb_build_object('http_code',403,
@@ -80,6 +102,7 @@ RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 DECLARE inv propina_private.invitations; credential text;
 BEGIN
   IF new.email IS NOT NULL AND new.raw_user_meta_data->>'propina_invitation' IS NULL
+    AND propina_private.self_signup_enabled()
     AND propina_private.valid_self_registration(new.raw_user_meta_data) THEN
     RETURN new;
   END IF;
