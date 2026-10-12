@@ -66,6 +66,19 @@
 .classic-participation-agreement>.check{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;font-weight:500;white-space:nowrap}
 .classic-participation-agreement>.check input{width:16px;min-width:16px}
 
+/* Jornada completa: fondos por área y puntos efectivos. */
+.classic-area-preview{border:1px solid var(--line);border-radius:14px;background:#f8faf9;padding:16px;margin:14px 0 22px}
+.classic-area-preview h3{margin:0 0 5px;font-size:17px}
+.classic-area-preview p{margin:4px 0 12px}
+.classic-area-preview-rows{display:grid;gap:6px}
+.classic-area-preview-row{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line)}
+.classic-area-preview-row>span{display:grid;gap:3px}
+.classic-area-preview-row small{color:var(--muted);font-size:12px}
+.classic-area-preview-row>.muted{font-size:12px}
+#attendance .point-cell,#attendance [data-day-estimate]{font-variant-numeric:tabular-nums;white-space:nowrap}
+#attendance td:nth-child(8){min-width:235px}
+@media(max-width:750px){.classic-area-preview{padding:12px}.classic-area-preview-row{flex-wrap:wrap}}
+
 /* Cliente nuevo: creación guiada de restaurante */
 .restaurant-setup{max-width:940px;margin:36px auto;padding:30px}
 .restaurant-setup>.grid{margin-bottom:18px}
