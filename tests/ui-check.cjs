@@ -86,7 +86,7 @@ if (require.main === module) (async()=>{
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=unified-onboarding-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=historial-unificado-20261012-3'),'App asset is versioned');
+  assert(html.includes('app.js?v=owner-archive-mutavia-20261012-1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v7'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
@@ -316,6 +316,37 @@ if (require.main === module) (async()=>{
   assert.equal(relog.context.restaurants.length,2,'All restaurant memberships survive password changes');
   assert(!relog.calls.some(x=>x[0]==='propina_save_day'),'Password regression test does not write any tips');
   relog.dom.window.close();
+
+  // Platform owner can archive and restore with explicit text confirmation.
+  // No real restaurants or database rows are modified by this UI test.
+  let archived=false;
+  const panel=await app({rpcOverrides:{
+    propina_platform_snapshot: async()=>({data:{restaurants:[{id:'r1',name:'Local uno',email:'owner@example.test',active:!archived,archived_at:archived?'2026-10-12T18:00:00Z':null,members:2}],invitations:[]}}),
+    propina_set_restaurant_archive: async(args)=>{archived=args.should_archive;return {data:null}}
+  }});
+  assert(html.includes('mutavia-brand.svg'),'Owner panel uses recovered original brand logo');
+  assert(html.includes('MUTAVIA GROUP'),'Only owner branding changes, not Turnia product brand');
+  assert.equal(panel.d.querySelector('#profileRole').textContent,'MUTAVIA GROUP · Creador de Turnia');
+  panel.d.querySelector('[data-tab="owner"]').click();await flush();
+  assert(panel.d.querySelector('[data-restaurant-archive="0"]'),'Owner sees archive action');
+  panel.w.prompt=()=> 'Otro restaurante';
+  panel.d.querySelector('[data-restaurant-reason="0"]').value='Retiro del local de prueba';
+  panel.d.querySelector('[data-restaurant-archive="0"]').click();await flush();
+  assert(!panel.calls.some(c=>c[0]==='propina_set_restaurant_archive'),'Wrong typed name must not call archive RPC');
+  panel.w.prompt=()=> 'Local uno';
+  panel.d.querySelector('[data-restaurant-archive="0"]').click();await flush();await flush();
+  const archiveCall=panel.calls.find(c=>c[0]==='propina_set_restaurant_archive');
+  assert(archiveCall,'Archive must use owner-only server RPC');
+  assert.equal(archiveCall[1].should_archive,true);
+  assert.equal(archiveCall[1].expected_name,'Local uno');
+  assert.equal(panel.d.querySelectorAll('[data-restaurant-archive]').length,0,'Archived restaurant hidden by default');
+  panel.d.querySelector('#showArchivedRestaurants').checked=true;
+  panel.d.querySelector('#showArchivedRestaurants').dispatchEvent(new panel.w.Event('change'));
+  assert.match(panel.d.querySelector('#platformRestaurants').textContent,/Archivado/,'Archived local shown when requested');
+  panel.d.querySelector('[data-restaurant-reason="0"]').value='Devolver acceso al restaurante';
+  panel.d.querySelector('[data-restaurant-archive="0"]').click();await flush();await flush();
+  assert(panel.calls.some(c=>c[0]==='propina_set_restaurant_archive'&&c[1].should_archive===false),'Restore via same authorized RPC');
+  panel.dom.window.close();
 
   // Role access: admins may edit shifts but cannot change ownership or team members.
   const admin=await app({platform:false,role:'admin'});
