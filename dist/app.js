@@ -1131,9 +1131,11 @@ async function openSupportTicket(id){
   $('supportThread').classList.remove('hide');
   $('supportThreadTitle').textContent='#'+supportShortId(ticket.id)+' · '+ticket.subject;
   $('supportThreadMeta').textContent=(supportCategoryLabels[ticket.category]||'Consulta')+' · '+(supportStatusLabels[ticket.status]||ticket.status)+' · '+supportStamp(ticket.created_at);
-  $('supportThreadMessages').innerHTML=messages.slice().sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))).map(m=>
-    `<div class="support-message"><small>${safe(m.author_id===user?.id?'Tú':'Equipo de soporte / cliente')} · ${safe(supportStamp(m.created_at))}</small><p>${safe(m.body).replace(/\\n/g,'<br>')}</p></div>`
-  ).join('')||'<p class="muted">Aún no hay respuestas. Puedes escribir la primera.</p>';
+  const firstMessage = '<div class="support-message support-original"><small>Solicitud original · '+safe(supportStamp(ticket.created_at))+'</small><p>'+safe(ticket.description).replace(/\n/g,'<br>')+'</p></div>';
+  const replies = messages.slice().sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))).map(m=>
+    '<div class="support-message"><small>'+safe(m.author_id===user?.id?'Tú':m.author_id===ticket.created_by?'Solicitante':'Equipo de Turnia')+' · '+safe(supportStamp(m.created_at))+'</small><p>'+safe(m.body).replace(/\n/g,'<br>')+'</p></div>'
+  ).join('');
+  $('supportThreadMessages').innerHTML = firstMessage + (replies || '<p class="muted">Aún no hay respuestas. Puedes escribir la primera.</p>');
   $('supportStatusControls').classList.toggle('hide',!context?.platform_admin);
   $('supportStatusSelect').value=ticket.status;
   $('supportReply').value='';$('supportReplyStatus').textContent='';
