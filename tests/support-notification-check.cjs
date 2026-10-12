@@ -1,0 +1,22 @@
+// Static contract checks for the email delivery integration. No keys, emails or production writes.
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const edge=fs.readFileSync(__dirname+'/../supabase/functions/turnia-support-notify/index.ts','utf8');
+const queue=fs.readFileSync(__dirname+'/../supabase/migrations/20261012_support_email_queue.sql','utf8');
+const web=fs.readFileSync(__dirname+'/../dist/app.js','utf8');
+assert.match(queue,/turnia_support_email_outbox/);
+assert.match(queue,/enable row level security/i);
+assert.match(queue,/revoke all on public\.turnia_support_email_outbox from public, anon, authenticated/i);
+assert.match(queue,/after insert on public\.turnia_support_tickets/i);
+assert.match(edge,/visitor\.auth\.getUser\(token\)/);
+assert.match(edge,/ticket\.created_by !== auth\.data\.user\.id/);
+assert.match(edge,/Deno\.env\.get\("RESEND_API_KEY"\)/);
+assert.match(edge,/Deno\.env\.get\("TURNIA_SUPPORT_FROM"\)/);
+assert.match(edge,/Deno\.env\.get\("TURNIA_SUPPORT_NOTIFY_TO"\)/);
+assert.match(edge,/Idempotency-Key/);
+assert.match(edge,/status: "sent"/);
+assert.match(edge,/status: "failed"/);
+assert.match(edge,/notification_queue_not_ready/);
+assert.match(web,/sb\.functions\.invoke\('turnia-support-notify'/);
+assert(!web.includes('RESEND_API_KEY'),'Secret names and keys must not appear in browser code');
+console.log('PASS: authenticated Resend server function, queue isolation, idempotence and ticket-first notification hook.');
