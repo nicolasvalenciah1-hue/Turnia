@@ -49,11 +49,41 @@
         $('newAccountFields').classList.add('hide');
         ['invitationName','invitationPassword','invitationPasswordConfirm'].forEach(id => { $(id).required = false; });
       }
-      check(await sb.rpc('propina_accept_invitation', { token: code }));
+      const phone = $('invitationPhone').value.trim();
+      if (phone && !/^[+0-9 ()-]{7,30}$/.test(phone)) throw Error('Revisa el teléfono de contacto.');
+      const desiredName = $('invitationRestaurantName').value.trim().replace(/\\s+/g, ' ');
+      if (desiredName && (desiredName.length < 2 || desiredName.length > 80)) throw Error('El nombre del restaurante debe tener entre 2 y 80 caracteres.');
+      if (phone) check(await sb.auth.updateUser({ data: { phone } }));
+      // The redemption decides the role on the server. Client-entered names cannot grant access.
+      const accepted = check(await sb.rpc('propina_accept_invitation', { token: code }));
+      // A restaurant-owner invitation authorizes exactly one new restaurant. Other roles skip creation.
+      if (accepted?.role === 'restaurant_owner') {
+        const restaurantName = desiredName || 'Mi restaurante';
+        try {
+          const rid = check(await sb.rpc('propina_create_restaurant', { restaurant_name: restaurantName }));
+          const current = check(await sb.auth.getUser()).user;
+          const managerName = String(current?.user_metadata?.display_name || current?.user_metadata?.full_name || '').trim();
+          // Supplementary information stays optional: address, city and tax ID can be entered later.
+          try {
+            check(await sb.rpc('propina_update_restaurant_business_profile', {
+              rid, restaurant_name: restaurantName,
+              profile: { legal_name:'', tax_id:'', business_type:'', street_address:'', city:'',
+                commune:'', region:'', phone: phone || String(current?.user_metadata?.phone || ''),
+                contact_email: current?.email || '', manager_name: managerName }
+            }));
+          } catch { /* The restaurant already exists; additional details can be edited from Ajustes. */ }
+        } catch (error) {
+          // Invitation was redeemed; the existing restaurant-setup fallback can safely retry.
+          try { sessionStorage.setItem('turnia_pending_setup_name', restaurantName); } catch {}
+          message('Tu cuenta está activada. Completa la creación del restaurante desde Turnia. '+(error.message || ''), true);
+          location.replace('/');
+          return;
+        }
+      }
       // Metadata only directs the UI. Authorization lives in the database.
       await sb.auth.updateUser({ data: { propina_invitation: null, turnia_invitation_setup: null } });
       $('invitationPassword').value = ''; $('invitationPasswordConfirm').value = '';
-      message('Tu invitación está activada. Entrando a Turnia…');
+      message('Cuenta y acceso activados. Preparando tu guía de Turnia…');
       location.replace('/');
     } catch (error) { message(error.message || 'No se pudo completar la cuenta. Reintenta.', true); }
     finally { busy = false; $('finishInvitation').disabled = false; }
