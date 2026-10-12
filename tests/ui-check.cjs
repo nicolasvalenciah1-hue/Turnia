@@ -94,9 +94,10 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=support-center-20261012-1'),'Styles asset is versioned');
+  assert(html.includes('styles.css?v=classic-shares-20261012-1'),'Styles asset is versioned');
   assert(html.includes('app.js?v=classic-shares-20261012-1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
+  assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(sw.includes('turnia-shell-v9'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
    assert.equal(a.d.querySelector('#avatar').textContent,'M','Platform owner displays Mutavia monogram');
