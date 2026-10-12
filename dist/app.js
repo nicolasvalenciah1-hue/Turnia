@@ -232,6 +232,12 @@ async function init() {
   }
   let nextContext = await call('propina_account_context');
   if (version !== authVersion) return;
+  const emailedToken = new URL(location.href).searchParams.get('turnia_invite');
+  if (/^[a-f0-9]{64}$/.test(emailedToken || '') ||
+      user.user_metadata?.turnia_invitation_setup && !nextContext.can_create && !(nextContext.restaurants || []).length) {
+    location.replace('/invitacion.html' + (emailedToken ? '?codigo=' + encodeURIComponent(emailedToken) : ''));
+    return;
+  }
   const token=String(user.user_metadata?.propina_invitation||'');
   inviteError='';
   if (!nextContext.can_create && !(nextContext.restaurants||[]).length
@@ -615,7 +621,7 @@ bind('saveWorkerLink', async () => {
   if (selected !== rid || !canManageTeam()) return;
   $('linkAgreement').checked = false;
   $('workerLinkResult').className = 'notice success spaced';
-  if (invite) showToken(result,'workerLinkResult');
+  if (invite) await sendInvitationEmail(result,'workerLinkResult');
   else $('workerLinkResult').textContent = `Cuenta vinculada a ${worker.name}. La persona puede actualizar Turnia para ver sus propinas.`;
   await loadTeam();
 });
@@ -1048,20 +1054,40 @@ bind('export', async () => {
 function showToken(data, target) {
   $(target).textContent = `Invitación para ${data.email}\nCódigo: ${data.token}\nVence: ${new Date(data.expires_at).toLocaleString('es-CL')}${data.duration_days ? `\nMembresía: ${data.duration_days} días` : ''}\nComparte este código por un canal privado.`;
 }
+async function sendInvitationEmail(data, target) {
+  showToken(data,target);
+  const output = $(target);
+  const details = output.textContent;
+  output.textContent = details + '\nEnviando correo de invitación…';
+  const retry = async () => {
+    let sent = false;
+    try {
+      const result = await sb.functions.invoke('turnia-invite-email',{body:{token:data.token}});
+      sent = !result.error && result.data?.status === 'accepted_by_smtp';
+    } catch {}
+    output.replaceChildren(document.createTextNode(details + (sent ? '\nCorreo enviado al servicio de correo. La persona podrá confirmar el código y completar su cuenta desde el enlace. Revisa también spam.' : '\nLa invitación se creó, pero no se confirmó el envío del correo. Espera un minuto y reintenta.')));
+    if (!sent) {
+      const button = document.createElement('button'); button.type='button'; button.className='secondary spaced'; button.textContent='Reenviar correo';
+      button.onclick = async () => { button.disabled=true; await retry(); }; output.append(button);
+    }
+    return sent;
+  };
+  return retry();
+}
 bind('adminInvite', async () => {
   if (!context?.platform_admin) throw Error('Esta acción requiere permisos de propietario de Turnia.');
   const role = $('adminRole').value, email = $('adminEmail').value.trim();
   if (!email || !$('adminEmail').checkValidity()) throw Error('Escribe un correo válido.');
   if (role !== 'restaurant_owner' && !rid) throw Error('Selecciona un restaurante para esta invitación.');
   const data = role === 'restaurant_owner' ? await call('propina_issue_membership_invitation',{invitee_email:email,duration_days:Number($('membershipDuration').value),price_clp:5000}) : await call('propina_issue_invitation',{invitee_email:email,invitee_role:role,rid});
-  showToken(data,'inviteResult'); msg('Invitación creada. No se realizó ningún cobro.','success');
+  const sent = await sendInvitationEmail(data,'inviteResult'); msg(sent ? 'Invitación creada y correo enviado. No se realizó ningún cobro.' : 'Invitación creada. El correo necesita un reintento.',sent ? 'success' : 'info');
   await loadPlatform();
 });
 $('adminRole').onchange = () => { $('membershipDuration').disabled = $('adminRole').value !== 'restaurant_owner'; };
 bind('staffInvite', async () => {
   if (!canInvite()) throw Error('Necesitas permiso de propietario del restaurante.');
   if (!$('staffEmail').value || !$('staffEmail').checkValidity()) throw Error('Escribe un correo válido.');
-  showToken(await call('propina_issue_staff_invitation',{invitee_email:$('staffEmail').value.trim(),invitee_role:$('staffRole').value,rid}),'staffInviteResult');
+  await sendInvitationEmail(await call('propina_issue_staff_invitation',{invitee_email:$('staffEmail').value.trim(),invitee_role:$('staffRole').value,rid}),'staffInviteResult');
   await loadTeam();
 });
 bind('acceptInvite', async () => {
