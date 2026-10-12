@@ -126,8 +126,11 @@ Deno.serve(async (request: Request) => {
       sent_at: new Date().toISOString(),
       provider_message_id: sent.id,
       last_error: null,
-    }).eq("ticket_id", id).eq("status", "sending").eq("attempts", event.attempts + 1);
-    if (confirmed.error) return reply(503, { error: "confirmation_pending" });
+    }).eq("ticket_id", id).eq("status", "sending").eq("attempts", event.attempts + 1)
+      .select("ticket_id").maybeSingle();
+    // An UPDATE can match zero rows without an error. Do not report acceptance
+    // until the outbox row actually records the provider's message id.
+    if (confirmed.error || !confirmed.data) return reply(503, { error: "confirmation_pending" });
     // Accepted by mail provider; receipt in Gmail is not yet guaranteed.
     return reply(200, { status: "accepted_by_provider" });
   } catch (error) {
