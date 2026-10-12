@@ -34,9 +34,9 @@ const invitation = {id:'i1',email:'staff@example.test',role:'admin',expires_at:'
   a.d.getElementById('loginForm').dispatchEvent(new a.w.Event('submit',{cancelable:true}));await flush();
   assert(!a.d.getElementById('app').classList.contains('hide'),'New password signs in');
   a.d.getElementById('restaurantEditName').value='x'.repeat(81);
-  await click(a,'saveRestaurantDetails');assert(!hasCall(a,'propina_update_restaurant_name'));
+  await click(a,'saveRestaurantDetails');assert(!hasCall(a,'propina_update_restaurant_business_profile'));
   a.d.getElementById('restaurantEditName').value='x'.repeat(80);
-  await click(a,'saveRestaurantDetails');assert(hasCall(a,'propina_update_restaurant_name'));
+  await click(a,'saveRestaurantDetails');assert(hasCall(a,'propina_update_restaurant_business_profile'));
   a.dom.window.close();
 
   const failed=await app({authOverrides:{updateUser:async()=>({error:{code:'weak_password',message:'weak'}})}});
