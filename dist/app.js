@@ -317,6 +317,39 @@ bind('sandboxPreflight', async () => {
       : 'Comprobación pendiente: '+String(response.reason || response.note || 'Revisa la configuración del vendedor de prueba.');
   } catch(e) { notice.textContent='No se pudo comprobar el vendedor: '+errorText(e); }
 });
+bind('inspectSubscription', async () => {
+  const notice=$('inspectionResult');
+  notice.classList.remove('hide');
+  notice.textContent='Consultando el estado de la orden en Mercado Pago, sin iniciar un pago…';
+  try {
+    const result=check(await sb.functions.invoke('turnia-inspect-test-subscription',{body:{}}));
+    if (!result?.found) {
+      notice.textContent='No se encontró una orden de prueba asociada a esta cuenta. No realices pagos.';
+      return;
+    }
+    if (!result.checked) {
+      notice.textContent='No pudimos verificar el estado directamente en Mercado Pago. Mantendremos los cobros desactivados.';
+      return;
+    }
+    const yesNo=x=>x===true?'sí':'no';
+    const valid=result.eligible_for_payment_test===true;
+    const environment= result.environment==='test'?'Prueba confirmado'
+      :result.environment==='live'?'Real (NO continuar)':'No verificado';
+    const lines=[
+      'Estado de la suscripción: '+String(result.status||'desconocido'),
+      'Vendedor de prueba: '+yesNo(result.seller_is_test),
+      'Comprador de prueba: '+yesNo(result.buyer_is_test),
+      'Monto y moneda correctos: '+yesNo(result.amount_and_currency_match),
+      'Orden vinculada a Turnia: '+yesNo(result.reference_matches),
+      'Entorno: '+environment,
+      valid?'Verificación preliminar correcta. Los cobros siguen desactivados.'
+        :'No continuar con pagos hasta validar las condiciones anteriores.'
+    ];
+    notice.textContent=lines.join('\n');
+  } catch (e) {
+    notice.textContent='No se pudo verificar la orden: '+errorText(e)+'. No realices pagos.';
+  }
+});
 bind('sandboxPay', async () => {
  try {
   if ($('sandboxCheckoutPanel').classList.contains('hide'))
