@@ -1154,7 +1154,21 @@ bind('sendSupportTicket',async()=>{
   }).select('id').single());
   if(restaurantId!==rid)return;
   $('supportSubject').value='';$('supportDescription').value='';
-  $('supportComposeStatus').textContent='Solicitud #'+supportShortId(result.id)+' registrada. Puedes seguirla aquí. El aviso por correo estará disponible cuando se configure el envío.';
+  $('supportComposeStatus').textContent='Solicitud #'+supportShortId(result.id)+' registrada. Verificando aviso por correo…';
+  // Email is best effort and separate from the ticket commit. Never hide or undo a saved ticket.
+  let emailNote='Aviso por correo pendiente de configuración.';
+  try {
+    if (sb.functions?.invoke) {
+      const notified=await sb.functions.invoke('turnia-support-notify',{body:{ticket_id:result.id}});
+      if (!notified.error) {
+        if (notified.data?.status==='accepted_by_provider') emailNote='Aviso aceptado por el servicio de correo.';
+        else if (notified.data?.status==='already_sent') emailNote='Aviso por correo registrado previamente.';
+        else if (notified.data?.status==='processing') emailNote='Aviso por correo en proceso.';
+        else if (notified.data?.status==='retry_later') emailNote='Aviso por correo pendiente de reintento.';
+      } else emailNote='No fue posible confirmar el aviso por correo; tu solicitud sí quedó guardada.';
+    }
+  } catch { emailNote='No fue posible confirmar el aviso por correo; tu solicitud sí quedó guardada.'; }
+  $('supportComposeStatus').textContent='Solicitud #'+supportShortId(result.id)+' registrada. '+emailNote;
   await loadSupport();
 });
 bind('refreshSupport',loadSupport);
