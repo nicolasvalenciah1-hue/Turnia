@@ -124,7 +124,7 @@ function updatePermissions() {
   const restaurantOwner = !!rid && currentRestaurant()?.role === 'owner';
   $('restaurantDetailsPanel').classList.toggle('hide', !rid);
   $('restaurantEditName').disabled = !restaurantOwner;
-  $('saveRestaurantDetails').disabled = !restaurantOwner;
+  $('saveRestaurantDetails').disabled = !restaurantOwner || restaurantBusinessFor!==rid;
   $('restaurantBusinessFields').classList.toggle('hide', !restaurantOwner);
   document.querySelectorAll('[data-business-field]').forEach(el => el.disabled = !restaurantOwner);
   $('restaurantEditHelp').textContent = restaurantOwner
@@ -143,6 +143,59 @@ function renderAccountSettings() {
   applyBusinessDetails();
   updatePermissions();
 }
+
+const businessKeys={legal_name:'LegalName',tax_id:'TaxId',business_type:'BusinessType',street_address:'StreetAddress',city:'City',commune:'Commune',region:'Region',phone:'Phone',contact_email:'ContactEmail',manager_name:'ManagerName'};
+function collectBusiness(prefix) {
+  return Object.fromEntries(Object.entries(businessKeys).map(([key,suffix])=>[key,$(prefix+suffix).value.trim()]));
+}
+function populateBusiness(prefix,values={}) {
+  Object.entries(businessKeys).forEach(([key,suffix])=>{$(prefix+suffix).value=values[key]||'';});
+}
+function applyBusinessDetails() {
+  populateBusiness('business',restaurantBusinessFor===rid?restaurantBusiness:{});
+}
+async function loadRestaurantBusiness(selected) {
+  if(!selected || currentRestaurant()?.role!=='owner')return;
+  try {
+    const data=await call('propina_restaurant_business_profile',{rid:selected});
+    if(rid!==selected || currentRestaurant()?.role!=='owner')return;
+    restaurantBusiness=data && typeof data==='object' ? data : {};
+    restaurantBusinessFor=selected;
+    applyBusinessDetails();updatePermissions();
+  } catch (error) {
+    if(rid===selected){restaurantBusinessFor='';$('restaurantEditHelp').textContent='No se pudieron cargar los datos del restaurante. '+errorText(error);}
+  }
+}
+bind('completeRestaurantSetup',async()=>{
+  if(!user || !context?.can_create || rid)throw Error('Esta cuenta no tiene una invitación pendiente para crear el restaurante.');
+  const name=$('setupRestaurantName').value.trim();
+  const profile=collectBusiness('setup');
+  if(name.length<2||name.length>80)throw Error('Escribe un nombre comercial de 2 a 80 caracteres.');
+  if(!profile.city || !profile.region || !profile.phone)throw Error('Completa ciudad, región y teléfono del restaurante.');
+  if(!$('setupContactEmail').checkValidity())throw Error('Revisa el correo de contacto.');
+  const created=await call('propina_create_restaurant_with_profile',{restaurant_name:name,profile});
+  if(!created)throw Error('No pudimos confirmar la creación del restaurante.');
+  $('restaurantSetup').classList.add('hide');
+  populateBusiness('setup',{});
+  $('setupRestaurantName').value='';
+  await init();
+  guideIndex=0;guideDone=false;saveGuideProgress();setTab('guide');
+  msg('Restaurante creado y configurado. Comienza por conocer cómo funciona Turnia.','success');
+});
+bind('activateInvitation',async()=>{
+  const token=$('activationToken').value.trim().toLowerCase();
+  if(!/^[a-f0-9]{64}$/.test(token))throw Error('Pega el código completo de 64 caracteres.');
+  await call('propina_accept_invitation',{token});
+  $('activationToken').value='';
+  await init();
+  if(!rid && context?.can_create) {msg('Invitación activada. Completa los datos de tu restaurante.','success');return;}
+  if(personalOnly())setTab('mytips');
+  else {guideIndex=0;guideDone=false;saveGuideProgress();setTab('guide');}
+  msg('Tu invitación quedó activada.','success');
+});
+bind('logoutSetup',logout);
+bind('logoutActivation',logout);
+
 function setSettingsStatus(text, kind = 'success') {
   const target = $('settingsStatus');
   target.textContent = text;
@@ -737,10 +790,14 @@ bind('saveRestaurantDetails', async () => {
   const selected = rid;
   const newName = $('restaurantEditName').value.trim().replace(/\s+/g,' ');
   if (!selected || currentRestaurant()?.role !== 'owner') throw Error('Solo el propietario puede editar este restaurante.');
+  if (restaurantBusinessFor!==selected) throw Error('Espera mientras se cargan los datos del restaurante.');
   if (newName.length < 2 || newName.length > 80) throw Error('Ingresa un nombre de restaurante entre 2 y 80 caracteres.');
-  await call('propina_update_restaurant_name',{p_restaurant_id:selected,p_name:newName});
+  const profile=collectBusiness('business');
+  if(!$('businessContactEmail').checkValidity())throw Error('Revisa el correo de contacto.');
+  await call('propina_update_restaurant_business_profile',{rid:selected,restaurant_name:newName,profile});
+  restaurantBusiness=profile;
   await init(); setTab('access');
-  setSettingsStatus('El nombre de tu restaurante se actualizó para todo el equipo.');
+  setSettingsStatus('La información de tu restaurante se actualizó y se conserva su historial.');
 });
 async function logout() {
   check(await sb.auth.signOut({scope:'local'}));
