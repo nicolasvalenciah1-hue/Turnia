@@ -19,15 +19,18 @@ ALTER TABLE propina_private.restaurant_business_profiles ENABLE ROW LEVEL SECURI
 
 CREATE OR REPLACE FUNCTION propina_private.normalize_restaurant_profile(data jsonb)
 RETURNS jsonb LANGUAGE plpgsql SET search_path TO '' AS $$
-DECLARE result jsonb; k text; value text;
+DECLARE result jsonb; k text; value text; max_len integer;
 BEGIN
  IF data IS NULL OR jsonb_typeof(data)<>'object' THEN RAISE EXCEPTION 'Revisa los datos del restaurante.'; END IF;
  result:='{}'::jsonb;
  FOR k IN SELECT unnest(ARRAY['legal_name','tax_id','business_type','street_address','city','commune','region','phone','contact_email','manager_name'])
  LOOP
    value:=btrim(coalesce(data->>k,''));
-   IF length(value)>CASE WHEN k IN ('street_address','legal_name') THEN 120 WHEN k='contact_email' THEN 254 WHEN k='manager_name' THEN 100 ELSE 70 END
-     THEN RAISE EXCEPTION 'Uno de los datos del restaurante es demasiado largo.'; END IF;
+   max_len:=70;
+   IF k IN ('street_address','legal_name') THEN max_len:=120; END IF;
+   IF k='contact_email' THEN max_len:=254; END IF;
+   IF k='manager_name' THEN max_len:=100; END IF;
+   IF length(value)>max_len THEN RAISE EXCEPTION 'Uno de los datos del restaurante es demasiado largo.'; END IF;
    IF k='contact_email' AND value<>'' AND value !~* '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'
      THEN RAISE EXCEPTION 'Correo de contacto inválido.'; END IF;
    IF k='phone' AND value<>'' AND value !~ '^[+0-9 ()-]{7,30}$'
