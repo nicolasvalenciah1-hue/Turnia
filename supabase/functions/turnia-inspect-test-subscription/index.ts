@@ -33,6 +33,11 @@ Deno.serve(async request=>{
   const buyerEmailTest=returnedBuyerEmail
     ? /@testuser\\.com$/i.test(sub.payer_email.trim()) : null;
   const payerIdPresent=sub.payer_id!==null && sub.payer_id!==undefined && String(sub.payer_id).length>0;
+  const {data:verifiedBuyer,error:verifyError}=await admin.rpc("turnia_verify_test_buyer_mp_id",{
+    p_turnia_user_id:user.id,p_provider_payer_id:sub.payer_id==null?"":String(sub.payer_id)
+  });
+  if(verifyError)return answer({found:true,checked:false,reason:"Buyer identity verification unavailable"});
+  const trustedBuyer=verifiedBuyer?.matches===true;
   const amountsMatch=Number(sub.auto_recurring?.transaction_amount)===Number(target.price_clp)&&sub.auto_recurring?.currency_id===target.currency;
   const referenceMatches=sub.external_reference===target.external_reference;
   const status=String(sub.status||"unknown").slice(0,32);
@@ -41,8 +46,10 @@ Deno.serve(async request=>{
   return answer({found:true,checked:true,status,local_status:target.local_status,
     seller_is_test:isSellerTest,buyer_is_test:buyerEmailTest,
     buyer_email_returned:returnedBuyerEmail,payer_id_returned:payerIdPresent,
+    trusted_buyer_id_configured:verifiedBuyer?.configured===true,
+    trusted_buyer_id_matches:verifiedBuyer?.matches??null,
     amount_and_currency_match:amountsMatch,reference_matches:referenceMatches,
     environment:liveMode,
-    eligible_for_payment_test:isSellerTest&&buyerEmailTest===true&&amountsMatch&&referenceMatches&&liveMode==="test"});
+    eligible_for_payment_test:isSellerTest&&trustedBuyer&&amountsMatch&&referenceMatches&&liveMode==="test"});
  }catch{return answer({error:"Inspection unavailable"},503)}
 });
