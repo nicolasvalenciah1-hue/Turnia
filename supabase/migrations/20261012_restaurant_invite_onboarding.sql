@@ -35,7 +35,7 @@ BEGIN
    result:=result||jsonb_build_object(k,value);
  END LOOP;
  RETURN result;
-END $$;
+END; $;
 REVOKE ALL ON FUNCTION propina_private.normalize_restaurant_profile(jsonb) FROM PUBLIC,anon,authenticated;
 
 CREATE OR REPLACE FUNCTION public.propina_create_restaurant_with_profile(restaurant_name text, profile jsonb)
@@ -56,7 +56,7 @@ BEGIN
  SELECT rid,legal_name,tax_id,business_type,street_address,city,commune,region,phone,contact_email,manager_name
  FROM jsonb_to_record(payload) AS x(legal_name text,tax_id text,business_type text,street_address text,city text,commune text,region text,phone text,contact_email text,manager_name text);
  RETURN rid;
-END $$;
+END; $;
 REVOKE ALL ON FUNCTION public.propina_create_restaurant_with_profile(text,jsonb) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.propina_create_restaurant_with_profile(text,jsonb) TO authenticated;
 
@@ -72,7 +72,7 @@ BEGIN
     FROM propina_private.restaurant_business_profiles p WHERE p.restaurant_id=rid),
   '{}'::jsonb
  );
-END $$;
+END; $;
 REVOKE ALL ON FUNCTION public.propina_restaurant_business_profile(uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.propina_restaurant_business_profile(uuid) TO authenticated;
 
@@ -99,6 +99,6 @@ BEGIN
  region=excluded.region,phone=excluded.phone,contact_email=excluded.contact_email,
  manager_name=excluded.manager_name,updated_at=now();
  RETURN jsonb_build_object('name',cleaned,'id',rid);
-END $$;
+END; $;
 REVOKE ALL ON FUNCTION public.propina_update_restaurant_business_profile(uuid,text,jsonb) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.propina_update_restaurant_business_profile(uuid,text,jsonb) TO authenticated;
