@@ -7,7 +7,7 @@ assert(sql.includes("COALESCE(flags.automatic_activation_enabled,false)"));
 assert(sql.includes("COALESCE(flags.allow_sandbox_activations,false)"));
 assert(sql.includes("'verified_pending_activation'"));
 assert(sql.includes("attempt.provider_preapproval_id IS DISTINCT FROM p_subscription"));
-assert(sql.includes("verified.provider_subscription_id"));
+assert(sql.includes("provider_subscription_id=p_subscription"));
 assert(sql.includes("IF attempt.status='completed'"));
 assert(fn.includes('authenticatedNotification'));
 assert(fn.includes('payment.live_mode!==false'));
