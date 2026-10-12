@@ -33,6 +33,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     calls.push([name,args]);
     if(name==='propina_account_context')return {data:context};
     if(name==='turnia_registration_status')return {data:{status:'pending_payment',restaurant_name:'Restaurante de prueba'}};
+    if(name==='turnia_sandbox_checkout_available')return {data:false};
     if(name==='propina_membership_context')return {data:[{restaurant_id:'r1',status:'active',payment_status:'trial',days_remaining:20,expires_at:'2026-11-01'}]};
     if(name==='propina_save_day'){
       data.propina_days.push({id:'d2',work_date:args.p_date,amount_clp:args.p_amount,hours_per_shift:args.p_shift_hours});
@@ -53,7 +54,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=registro-v1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=registro-v1'),'App asset is versioned');
+  assert(html.includes('app.js?v=sandbox-v1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v3'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
@@ -111,6 +112,8 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const pending=await app({platform:false,restaurant:false,registered:true});
   assert(!pending.d.querySelector('#pendingRegistration').classList.contains('hide'),'Unpaid customer gets pending screen');
   assert(pending.d.querySelector('#app').classList.contains('hide'),'Unpaid customer cannot access operational panel');
+  assert(pending.d.querySelector('#sandboxCheckoutPanel').classList.contains('hide'),'Sandbox payment UI stays hidden while DB flag is off');
+  assert(!pending.calls.some(x=>x[0]==='turnia-sandbox-checkout'),'No sandbox checkout request without explicit action');
   pending.d.querySelector('#pendingLogout').click();await flush();
   assert(!pending.d.querySelector('#auth').classList.contains('hide'),'Pending customer can sign out');
   pending.dom.window.close();
