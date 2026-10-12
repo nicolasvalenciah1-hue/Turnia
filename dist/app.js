@@ -105,6 +105,7 @@ function updatePermissions() {
   $('teamAccessPanel').classList.toggle('hide', !canManageTeam());
   $('workerLinkPanel').classList.toggle('hide', !canManageTeam());
   $('myTipsNav').classList.toggle('hide', !hasWorkerLink());
+  $('viewGlobalTips').classList.toggle('hide', !rid || personalOnly());
   $('membershipCard').classList.toggle('hide', personalOnly());
   ['home','daily','distribution','history','staff','guide'].forEach(name => {
     document.querySelector(`[data-tab="${name}"]`).classList.toggle('hide', personalOnly());
@@ -427,6 +428,11 @@ function renderMyTips() {
 }
 $('myTipsFrom').onchange = renderMyTips; $('myTipsTo').onchange = renderMyTips;
 $('clearMyTips').onclick = () => { $('myTipsFrom').value = ''; $('myTipsTo').value = ''; renderMyTips(); };
+bind('viewGlobalTips', async () => {
+  if (!rid || personalOnly()) throw Error('El propietario debe habilitar la consulta global según el acuerdo del equipo.');
+  if (!days.some(d => d.work_date === $('payoutDate').value)) $('payoutDate').value = days[0]?.work_date || today();
+  setTab('distribution');
+});
 bind('refreshMyTips', async () => { await init(); setTab(hasWorkerLink() ? 'mytips' : 'access'); });
 async function loadPlatform() {
   const version = ++platformVersion;

@@ -56,8 +56,8 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=worker-links-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=worker-links-20261012-1'),'App asset is versioned');
+  assert(html.includes('styles.css?v=worker-links-20261012-2'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=worker-links-20261012-2'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v5'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');

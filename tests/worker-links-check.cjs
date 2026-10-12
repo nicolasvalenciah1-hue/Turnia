@@ -9,6 +9,7 @@ const visible=(a,id)=>!a.d.getElementById(id).classList.contains('hide');
 (async()=>{
  const a=await app({role:'viewer',platform:false,completed:false,restaurantContext:linked,rpcOverrides:{propina_my_tips:()=>({data:tips})}});
  assert(visible(a,'mytips'),'Personal reader lands on own history, even before onboarding');
+ assert(!visible(a,'viewGlobalTips'),'Personal access cannot reveal global distribution');
  assert(!a.calls.some(c=>c[0]==='query'),'No broad data requested by personal reader');
  assert(!a.calls.some(c=>c[0]==='propina_membership_context'),'Personal reader does not request membership');
  assert.equal(a.d.getElementById('myTipsRows').children.length,2);
@@ -26,7 +27,7 @@ const visible=(a,id)=>!a.d.getElementById(id).classList.contains('hide');
  click(a,'logout');await flush();assert(!a.d.getElementById('myTipsRows').textContent.includes('40.000'));assert.equal(a.errors.length,0);a.dom.window.close();
  const b=await app({role:'viewer',platform:false,restaurantContext:{...linked,read_scope:'shared'},rpcOverrides:{propina_my_tips:()=>({data:tips})}});
  assert(b.calls.some(c=>c[0]==='query'),'Shared reader retains authorized global data');assert(visible(b,'myTipsNav'));assert(!b.d.querySelector('[data-tab="history"]').classList.contains('hide'));
- b.d.querySelector('[data-tab="mytips"]').click();assert(visible(b,'mytips'));b.dom.window.close();
+ b.d.querySelector('[data-tab="mytips"]').click();assert(visible(b,'mytips'));assert(visible(b,'viewGlobalTips'));click(b,'viewGlobalTips');await flush();assert(visible(b,'distribution'));assert.equal(b.d.getElementById('payouts').children.length,2,'Global shortcut shows the whole latest day');b.dom.window.close();
  const c=await app({role:'owner',platform:false,rpcOverrides:{propina_restaurant_team:()=>({data:{members:[{email:'ana@example.test',role:'viewer'},{email:'boss@example.test',role:'admin'}],invitations:[]}}),propina_issue_worker_invitation:()=>({data:{email:'new@example.test',token:'a'.repeat(64),expires_at:'2026-12-01'}})}});
  c.d.querySelector('[data-tab="access"]').click();await flush();assert(visible(c,'workerLinkPanel'));
  assert(![...c.d.getElementById('linkMember').options].some(o=>o.value==='boss@example.test'),'Only viewer accounts can link');

@@ -1,6 +1,6 @@
 # Vincular cuentas con trabajadores
 
-Estado: implementación lista para revisión. No publicada y migración no aplicada permanentemente.
+Estado: publicación autorizada por el usuario el 12 de octubre de 2026. Migración aplicada al proyecto existente.
 Base: main `1cca0ba63c7c915ae5234dda0ee852b23414442a`.
 
 ## Comportamiento para el usuario
@@ -9,8 +9,9 @@ En Accesos y ajustes, el propietario selecciona una cuenta de consulta y su fich
 También puede crear una invitación personal: el correo verificado y la ficha se vinculan al
 activar el código en una sola transacción. No se envían correos ni mensajes desde este cambio.
 
-La opción inicial es **Solo sus propinas**. La alternativa **Sus propinas y todo el local**
-permite ver y exportar la información general del restaurante. Ambas requieren una nota y
+La opción inicial es **Solo sus propinas**. La alternativa **Sus propinas y reparto global**
+permite ver y exportar la información general del restaurante. Incluye el botón **Ver reparto global**
+desde Mis propinas, que abre la jornada más reciente si no hay una fecha válida seleccionada. Ambas requieren una nota y
 la declaración del propietario de que todos los trabajadores acordaron esa vinculación y
 visibilidad. La interfaz explica que esto no equivale a recoger votos ni firmas digitales.
 
@@ -53,7 +54,8 @@ por el propietario. Ninguna cuenta real quedó vinculada durante las pruebas.
 
 ## Publicación
 
-Requiere aprobación de esta propuesta, conforme a la solicitud de publicar mejoras aprobadas.
-Después: aplicar la migración al proyecto Supabase existente, verificar esquema y pruebas
-revertidas, fusionar la propuesta con CI aprobado, y comprobar los archivos servidos por Render.
+El usuario aprobó publicar y pidió conservar la opción de consultar el global.
+Migración aplicada: `20261012164057_worker_account_links.sql`. Las dos suites SQL pasaron
+tras aplicarla; sus datos de prueba se revirtieron. El frontend se publica al fusionar la
+propuesta #24 con CI aprobado; comprobar los archivos servidos por Render después de la fusión.
 Los cobros y suscripciones permanecen desactivados. No ejecutar reset de Supabase.

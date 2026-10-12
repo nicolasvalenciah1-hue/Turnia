@@ -64,7 +64,7 @@ repositorio: no se debe usar esta carpeta para reconstruir la base ni ejecutar u
 
 ## Cuentas vinculadas a trabajadores
 
-La propuesta de vinculación agrega en **Accesos y ajustes** un formulario para asociar
+La vinculación agrega en **Accesos y ajustes** un formulario para asociar
 una cuenta de consulta existente con su ficha, o emitir una invitación personal ya vinculada.
 Solo el propietario del local administra estas vinculaciones. Requiere confirmar el acuerdo
 del equipo y guardar una nota: es una declaración del propietario, no una votación digital.
@@ -76,6 +76,6 @@ hasta una acción expresa; no hay asociaciones automáticas por nombre o correo.
 
 `tests/worker-links-check.cjs` verifica la interfaz con Auth simulado.
 `tests/database-worker-links.sql` verifica aislamiento y redondeo usando identidades existentes
-y datos temporales revertidos. La migración `20261012162747_worker_account_links.sql` depende
-del esquema existente y debe aplicarse antes de publicar el frontend. Está preparada y
-verificada mediante ROLLBACK; pendiente de aprobación para su aplicación permanente.
+y datos temporales revertidos. La migración `20261012164057_worker_account_links.sql` depende
+del esquema existente y debe aplicarse antes de publicar el frontend. Se aplicó al proyecto existente el 12 de octubre de 2026 y las pruebas de base se repitieron
+con ROLLBACK para los datos de prueba. El acceso compartido incluye el botón **Ver reparto global** desde Mis propinas.
