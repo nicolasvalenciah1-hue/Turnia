@@ -81,3 +81,15 @@
 #supportThread textarea,#supportComposePanel textarea{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;resize:vertical}
 #supportThread .row{flex-wrap:wrap}
 @media(max-width:650px){.support-ticket-card{align-items:flex-start;flex-direction:column}.support-ticket-card>div:last-child{justify-content:flex-start}.support-ticket-card button{min-height:40px}}
+
+/* First-run guided tour: remains visible while working inside each section. */
+.onboarding-tour{display:flex;justify-content:space-between;align-items:center;gap:24px;margin:0 0 24px;padding:19px 22px;border:1px solid #b9d9d8;border-left:5px solid #087f8c;border-radius:15px;background:#f1faf8;box-shadow:0 5px 18px #14283f0d}
+.onboarding-tour.hide{display:none}
+.onboarding-tour-copy{flex:1;min-width:0}
+.onboarding-tour small{color:#087f8c;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.onboarding-tour h2{margin:4px 0 5px;font-size:20px}
+.onboarding-tour p{margin:0 0 6px;font-size:13px;line-height:1.5}
+.onboarding-tour-example{color:#4e6f77;font-style:italic}
+.onboarding-tour-actions{display:flex;flex-direction:column;gap:7px;min-width:150px}
+.onboarding-tour-actions button{min-height:40px}
+@media(max-width:700px){.onboarding-tour{display:block;padding:17px}.onboarding-tour-actions{display:flex;flex-direction:row;flex-wrap:wrap;min-width:0;margin-top:12px}.onboarding-tour-actions button{flex:1 1 125px}}
