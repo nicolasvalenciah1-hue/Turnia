@@ -9,15 +9,23 @@
 - No se notifican retroactivamente solicitudes antiguas. Por ejemplo, la prueba previa #0E7E61A9 no enviará correo al activar este módulo.
 - No se envían correos todavía hasta configurar el proveedor y desplegar la nueva funcionalidad.
 
+## Estado verificado el 12-10-2026
+- Instalado en el proyecto Supabase existente: `public.turnia_support_email_outbox`, RLS activa, cero permisos para `anon`/`authenticated`, trigger `turnia_support_email_enqueue` activo.
+- La cola empezó con 0 eventos para no reenviar correos de tickets históricos. El ticket de soporte existente se conservó.
+- Edge Function `turnia-support-notify` desplegada en versión 1, estado ACTIVE, `verify_jwt=true`.
+- PR #34 sigue abierto; Render continúa publicando `main`. **Aún no hay envío real confirmado ni credenciales Resend verificadas.**
+- GitHub Actions pasó los controles de sintaxis, interfaz y notificación; son pruebas simuladas/estáticas, no entregas de email.
+- Limitación pendiente: si se cierra el navegador tras guardar el ticket, la fila sigue en la cola, pero no hay un procesador automático de pendientes. La solución completa debe añadir un worker programado con credencial guardada en Vault, sin exponerla al cliente.
+
 ## Pasos de activación
-1. En Supabase > SQL Editor del proyecto Turnia, ejecutar **una sola vez** el archivo `supabase/migrations/20261012_support_email_queue.sql` y comprobar que aparezca `Success. No rows returned`.
-2. Comprobar que existe `public.turnia_support_email_outbox`, que su RLS está activa y que hay un trigger `turnia_support_email_enqueue` en `public.turnia_support_tickets`.
+1. **Completado:** migración aplicada mediante la conexión de Supabase. No volver a ejecutarla salvo revisión de cambios.
+2. **Completado:** tabla, RLS y trigger verificados con SQL de solo lectura.
 3. En Resend, acceder a una cuenta propia. Crear una **API key para envío de correos**, y verificar un dominio remitente o utilizar `onboarding@resend.dev` exclusivamente para las pruebas permitidas por Resend (por lo general, envío restringido a la dirección asociada a la cuenta Resend). No publicar ninguna clave en GitHub, el chat ni en el frontend.
 4. En Supabase > Edge Functions > **Secrets**, configurar:
    - `RESEND_API_KEY`: valor privado generado en Resend
    - `TURNIA_SUPPORT_FROM`: `Turnia <soporte@dominio-verificado.cl>` o, solo en pruebas autorizadas, `Turnia <onboarding@resend.dev>`
    - `TURNIA_SUPPORT_NOTIFY_TO`: `turnia.notificaciones@gmail.com`
-5. Desplegar la función `turnia-support-notify` con `verify_jwt=true` y publicar el nuevo frontend en Render.
+5. **Función desplegada y verificada.** No fusionar el PR ni publicar el frontend hasta configurar el proveedor, verificar destinatario/remitente y completar una prueba autorizada.
 6. Desde una cuenta válida de restaurante, crear **un ticket nuevo** y revisar que la interfaz indique `Aviso aceptado por el servicio de correo`. Comprobar la recepción real en la bandeja Gmail, así como envíos y errores en Resend.
 7. Revisar el registro de cola en Supabase (lectura administrativa):
 ```sql
