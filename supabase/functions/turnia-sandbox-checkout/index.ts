@@ -15,7 +15,7 @@ Deno.serve(async req => {
   if (!auth.startsWith("Bearer ")) return reply({error:"Authentication required"},401);
   const userClient = createClient(url, anonKey, {global:{headers:{Authorization:auth}},
     auth:{persistSession:false,autoRefreshToken:false}});
-  const {data:{user},error:userError} = await userClient.auth.getUser();
+  const {data:{user},error:userError} = await userClient.auth.getUser(auth.slice(7));
   if (userError || !user || !user.email_confirmed_at) return reply({error:"Confirm your email first"},403);
   const admin = createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
   // A service-role-only RPC resolves the account and checks the disabled-by-default flag.
