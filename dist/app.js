@@ -318,8 +318,12 @@ bind('sandboxPreflight', async () => {
   } catch(e) { notice.textContent='No se pudo comprobar el vendedor: '+errorText(e); }
 });
 bind('sandboxPay', async () => {
+ try {
   if ($('sandboxCheckoutPanel').classList.contains('hide'))
     throw Error('Las pruebas de pago todavía no están habilitadas.');
+  const notice = $('sandboxPayMessage');
+  notice.classList.remove('hide');
+  notice.textContent='Preparando la operación de prueba…';
   const buyer = $('sandboxBuyer').value.trim().toLowerCase();
   if (!/^[^@\s]+@testuser\.com$/i.test(buyer))
     throw Error('Ingresa un comprador de pruebas de Mercado Pago.');
@@ -335,7 +339,12 @@ bind('sandboxPay', async () => {
       target.hostname !== 'mercadopago.cl' &&
       !target.hostname.endsWith('.mercadopago.cl'))
     throw Error('El destino de pago no pertenece a Mercado Pago.');
+  notice.textContent='Mercado Pago abrió una orden de prueba. Continuando…';
   location.assign(target.href);
+ } catch (e) {
+  $('sandboxPayMessage').classList.remove('hide');
+  $('sandboxPayMessage').textContent='No se pudo preparar el pago de prueba: '+errorText(e);
+ }
 });
 $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData();
