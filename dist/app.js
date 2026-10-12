@@ -386,8 +386,8 @@ function renderFlex() {
   }).join('')||'<p class="muted">Agrega áreas con porcentajes positivos en Equipo y áreas.</p>';
   $('flexWorkerRows').innerHTML=workers.filter(w=>w.active||existing?.entries?.some(e=>e.worker_id===w.id)).filter(w=>areas.some(a=>a.id===w.area_id&&Number(a.percentage)>0)).map(w=>{
     const saved=existing?.entries?.find(e=>e.worker_id===w.id);
-    const weight=saved?Number(saved.weight):1,note=saved?.note||'',disabled=!canEdit()?'disabled':'';
-    return '<div class="flex-person"><label class="check"><input type="checkbox" data-flex-present="'+safe(w.id)+'" '+(saved?'checked':'')+' '+disabled+'><strong>'+safe(w.name)+'</strong> · '+safe(areas.find(a=>a.id===w.area_id)?.name||'')+'</label><div class="flex-person-config"><label>Partes<input type="number" data-flex-weight="'+safe(w.id)+'" min="0.01" max="2" step="0.01" value="'+weight+'" '+disabled+'></label><label>Motivo del acuerdo<input data-flex-note="'+safe(w.id)+'" maxlength="300" placeholder="Motivo si las partes son distintas de 1" value="'+safe(note)+'" '+disabled+'></label><label class="check"><input type="checkbox" data-flex-agreed="'+safe(w.id)+'" '+(saved?.agreed?'checked':'')+' '+disabled+'>Acuerdo confirmado</label></div></div>';
+    const weight=saved?Number(saved.weight):1,percentage=Number((weight*100).toFixed(2)),note=saved?.note||'',disabled=!canEdit()?'disabled':'';
+    return '<div class="flex-person"><label class="check"><input type="checkbox" data-flex-present="'+safe(w.id)+'" '+(saved?'checked':'')+' '+disabled+'><strong>'+safe(w.name)+'</strong> · '+safe(areas.find(a=>a.id===w.area_id)?.name||'')+'</label><div class="flex-person-config"><label>Participación (%)<input type="number" data-flex-percent="'+safe(w.id)+'" min="1" max="200" step="0.01" value="'+percentage+'" aria-label="Participación porcentual de '+safe(w.name)+'" '+disabled+'></label><label>Motivo del acuerdo<input data-flex-note="'+safe(w.id)+'" maxlength="300" placeholder="Motivo si las partes son distintas de 1" value="'+safe(note)+'" '+disabled+'></label><label class="check"><input type="checkbox" data-flex-agreed="'+safe(w.id)+'" '+(saved?.agreed?'checked':'')+' '+disabled+'>Acuerdo confirmado</label></div></div>';
   }).join('')||'<p class="muted">Agrega trabajadores activos para registrar un turno.</p>';
   renderFlexResults();renderFlexHistory();updatePermissions();
 }
@@ -395,7 +395,7 @@ function renderFlexResults() {
   const date=$('flexDate').value,records=flexShifts.filter(s=>s.work_date===date),result=flexPayouts.filter(p=>p.work_date===date);
   const amount=records.reduce((n,s)=>n+Number(s.amount_clp),0),paid=result.reduce((n,s)=>n+Number(s.calculated_clp),0);
   $('flexSummary').innerHTML=records.length?'<div><small>Total AM + PM</small><strong>'+clp(amount)+'</strong></div><div><small>Distribuido</small><strong>'+clp(paid)+'</strong></div><div><small>Diferencia</small><strong>'+clp(amount-paid)+'</strong></div>':'<p class="muted">Guarda un turno para ver su reparto.</p>';
-  $('flexPayoutRows').innerHTML=result.map(p=>'<tr><td>'+safe(p.worker_name)+'</td><td>'+safe(p.area_name)+'</td><td>'+(p.group_code==='DIA'?'Fondo diario':safe(p.group_code))+'</td><td>'+Number(p.weight)+'</td><td class="money">'+clp(p.calculated_clp)+'</td></tr>').join('')||emptyRow(5,'Aún no hay reparto flexible para esta fecha.');
+  $('flexPayoutRows').innerHTML=result.map(p=>'<tr><td>'+safe(p.worker_name)+'</td><td>'+safe(p.area_name)+'</td><td>'+(p.group_code==='DIA'?'Fondo diario':safe(p.group_code))+'</td><td>'+Number((Number(p.weight)*100).toFixed(2))+'%</td><td class="money">'+clp(p.calculated_clp)+'</td></tr>').join('')||emptyRow(5,'Aún no hay reparto flexible para esta fecha.');
   $('flexExport').disabled=!result.length;
 }
 function renderFlexHistory() {
@@ -420,11 +420,11 @@ bind('saveFlexShift',async()=>{
   const modes=eligible.map(a=>({area_id:a.id,mode:document.querySelector('[data-flex-mode="'+a.id+'"]').value}));
   const entries=[...document.querySelectorAll('[data-flex-present]:checked')].map(el=>{
     const worker_id=el.dataset.flexPresent;
-    return {worker_id,weight:Number(document.querySelector('[data-flex-weight="'+worker_id+'"]').value),note:document.querySelector('[data-flex-note="'+worker_id+'"]').value.trim(),agreed:document.querySelector('[data-flex-agreed="'+worker_id+'"]').checked};
+    return {worker_id,weight:Number(document.querySelector('[data-flex-percent="'+worker_id+'"]').value)/100,note:document.querySelector('[data-flex-note="'+worker_id+'"]').value.trim(),agreed:document.querySelector('[data-flex-agreed="'+worker_id+'"]').checked};
   });
   if(!entries.length)throw Error('Selecciona al menos un trabajador.');
-  if(entries.some(e=>!Number.isFinite(e.weight)||e.weight<0.01||e.weight>2))throw Error('Participaciones inválidas: 0,01 a 2.');
-  if(entries.some(e=>e.weight!==1&&(!e.agreed||e.note.length<10)))throw Error('Registra acuerdo y explicación de 10 caracteres o más.');
+  if(entries.some(e=>!Number.isFinite(e.weight)||e.weight<0.01||e.weight>2))throw Error('La participación debe estar entre 1% y 200%.');
+  if(entries.some(e=>Math.abs(e.weight-1)>0.0000001&&(!e.agreed||e.note.length<10)))throw Error('Registra acuerdo y explicación de 10 caracteres o más para una participación distinta de 100%.');
   const presentAreas=new Set(entries.map(e=>workers.find(w=>w.id===e.worker_id)?.area_id));
   if(eligible.some(a=>!presentAreas.has(a.id)))throw Error('Cada área necesita una persona presente.');
   const other=flexShifts.find(s=>s.work_date===date&&s.shift_code!==shift);
@@ -436,7 +436,7 @@ bind('saveFlexShift',async()=>{
 bind('flexExport',async()=>{
   const date=$('flexDate').value,data=flexPayouts.filter(p=>p.work_date===date);
   if(!data.length)throw Error('No hay repartos para exportar.');
-  const rows=[['Fecha','Restaurante','Turno/fondo','Trabajador','Área','Partes','Propina CLP'],...data.map(p=>[p.work_date,currentRestaurant()?.name||'',p.group_code,p.worker_name,p.area_name,p.weight,p.calculated_clp])];
+  const rows=[['Fecha','Restaurante','Turno/fondo','Trabajador','Área','Participación (%)','Propina CLP'],...data.map(p=>[p.work_date,currentRestaurant()?.name||'',p.group_code,p.worker_name,p.area_name,Number((Number(p.weight)*100).toFixed(2)),p.calculated_clp])];
   const csv='\ufeff'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');
   link.href=url;link.download='turnia_am_pm_'+date+'.csv';document.body.append(link);link.click();link.remove();
