@@ -24,7 +24,7 @@ let myTips = [], myTipsLoaded = false;
 let flexShifts = [], flexPayouts = [];
 let restaurantBusiness = {}, restaurantBusinessFor = '', inviteError = '';
 let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = false;
-let guideIndex = 0, guideDone = false;
+let guideIndex = 0, guideDone = false, tourDismissed = false;
 let authVersion = 0, teamVersion = 0, platformVersion = 0;
 let teamMembers = [], teamInvitations = [], platformRestaurants = [], platformInvitations = [];
 let supportTickets = [], ownerSupportTickets = [], selectedSupportTicket = null, supportVersion = 0, ownerSupportVersion = 0;
@@ -106,6 +106,7 @@ function setTab(name) {
   if (name === 'access') void loadTeam();
   if (name === 'owner') { void loadPlatform(); void loadOwnerSupport(); }
   if (name === 'support') void loadSupport();
+  renderTour();
 }
 function updatePermissions() {
   const editing = canEdit() && !loadingData;
@@ -185,8 +186,9 @@ bind('completeRestaurantSetup',async()=>{
   $('restaurantSetup').classList.add('hide');
   populateBusiness('setup',{});
   $('setupRestaurantName').value='';
+  try { sessionStorage.removeItem('turnia_pending_setup_name'); } catch {}
   await init();
-  guideIndex=0;guideDone=false;saveGuideProgress();setTab('guide');
+  guideIndex=2;guideDone=false;tourDismissed=false;saveGuideProgress();setTab('guide');
   msg('Restaurante creado y configurado. Comienza por conocer cómo funciona Turnia.','success');
 });
 bind('activateInvitation',async()=>{
@@ -197,7 +199,7 @@ bind('activateInvitation',async()=>{
   await init();
   if(!rid && context?.can_create) {msg('Invitación activada. Completa los datos de tu restaurante.','success');return;}
   if(personalOnly())setTab('mytips');
-  else {guideIndex=0;guideDone=false;saveGuideProgress();setTab('guide');}
+  else {guideIndex=2;guideDone=false;tourDismissed=false;saveGuideProgress();setTab('guide');}
   msg('Tu invitación quedó activada.','success');
 });
 bind('logoutSetup',logout);
@@ -304,6 +306,7 @@ async function init() {
       $('setupAccountEmail').value=user.email||'';
       if (!$('setupManagerName').value) $('setupManagerName').value=context.display_name===user.email?'':context.display_name||'';
       if (!$('setupContactEmail').value) $('setupContactEmail').value=user.email||'';
+      try { const draft = sessionStorage.getItem('turnia_pending_setup_name'); if (draft && !$('setupRestaurantName').value) $('setupRestaurantName').value=draft; } catch {}
     } else {
       $('inviteActivation').classList.remove('hide');
       $('activationMessage').textContent=inviteError||'Tu cuenta está confirmada. Introduce el código para continuar.';
@@ -348,7 +351,7 @@ async function load() {
   } finally { if (version === loadVersion) { loadingData = false; updatePermissions(); } }
 }
 function render() {
-  renderMyTips(); renderStaff(); renderWorkerOptions(); renderFlex(); renderDay(); renderHistory(); renderPayouts(); renderHome(); updatePermissions();
+  renderMyTips(); renderStaff(); renderWorkerOptions(); renderFlex(); renderDay(); renderHistory(); renderPayouts(); renderHome(); updatePermissions(); renderTour();
 }
 function renderStaff() {
   const total = areas.reduce((n,a) => n + Number(a.percentage), 0), correct = Math.abs(total-100) < .0001;
@@ -764,26 +767,83 @@ const guideSteps = [
 ];
 function guideKey() { return user ? `turnia_guide_v1_${user.id}` : ''; }
 function readGuideProgress() {
-  try { const saved = JSON.parse(storage.get(guideKey()) || '{}'); guideIndex = Math.max(0,Math.min(9,Number(saved.step) || 0)); guideDone = saved.done === true; } catch { guideIndex = 0; guideDone = false; }
+  try {
+    const raw = storage.get(guideKey()), saved = raw ? JSON.parse(raw) : {};
+    // Email verification and restaurant creation are already complete on first entry.
+    guideIndex = Math.max(0, Math.min(guideSteps.length - 1, Number(saved.step ?? (rid ? 2 : 0)) || 0));
+    guideDone = saved.done === true;
+  } catch { guideIndex = rid ? 2 : 0; guideDone = false; }
   $('onboardingBanner').classList.toggle('hide', guideDone || personalOnly() || context?.platform_admin || !(rid || context?.can_create));
   renderGuide();
+  renderTour();
 }
 function saveGuideProgress() { if (user) storage.set(guideKey(), JSON.stringify({step:guideIndex,done:guideDone})); }
 function renderGuide() {
   const step = guideSteps[guideIndex];
   $('guideProgressText').textContent = guideDone ? 'Completaste la guía. Puedes repasar cualquier paso.' : `Paso ${guideIndex+1} de ${guideSteps.length}`;
-  $('guideProgress').style.width = `${guideDone ? 100 : (guideIndex+1)*10}%`;
+  $('guideProgress').style.width = `${guideDone ? 100 : Math.round((guideIndex+1)*100/guideSteps.length)}%`;
   $('guideNav').innerHTML = guideSteps.map((s,i) => `<li><button data-guide-step="${i}" class="${i === guideIndex ? 'active' : ''} ${guideDone || i < guideIndex ? 'done' : ''}" ${i === guideIndex ? 'aria-current="step"' : ''}><span>${guideDone || i < guideIndex ? '✓' : i+1}</span>${s[0]}</button></li>`).join('');
   $('guideContent').innerHTML = `<p class="eyebrow">PASO ${String(guideIndex+1).padStart(2,'0')}</p><h2>${step[0]}</h2><p class="muted">${step[1]}</p><ul>${step[2].map(s => `<li>${s}</li>`).join('')}</ul><div class="guide-example">${step[3]}</div><button class="secondary" data-go="${step[4]}">Ir a ${titles[step[4]]} →</button>`;
   $('guidePrev').disabled = guideIndex === 0;
-  $('guideNext').textContent = guideIndex === 9 ? 'Terminar guía ✓' : 'Siguiente →';
+  $('guideNext').textContent = 'Abrir esta tarea →';
 }
 $('guideNav').addEventListener('click', e => { const el = e.target.closest('[data-guide-step]'); if (el) { guideIndex = Number(el.dataset.guideStep); saveGuideProgress(); renderGuide(); } });
 $('guidePrev').onclick = () => { if (guideIndex > 0) guideIndex--; saveGuideProgress(); renderGuide(); };
+// Unlike a static article, the assistant opens the correct section at each step.
+function finishGuide() {
+  guideDone = true; saveGuideProgress(); $('onboardingBanner').classList.add('hide');
+  renderTour(); setTab('home');
+  msg('Guía completada. Puedes volver a consultarla desde el menú.', 'success');
+}
+function advanceGuide() {
+  if (guideIndex >= guideSteps.length - 1) return finishGuide();
+  guideIndex++; saveGuideProgress(); renderGuide();
+  setTab(guideSteps[guideIndex][4]);
+  const focusIds = { 2:'areaName', 3:'workerName', 4:'date', 5:'amount', 6:'attendance', 7:'payoutDate', 8:'historyFrom' };
+  $(focusIds[guideIndex])?.focus();
+}
+function renderTour() {
+  const el = $('onboardingTour');
+  if (!el) return;
+  const show = !!rid && !!context && !context.platform_admin && canEdit() && !guideDone && !tourDismissed && tab !== 'guide';
+  el.classList.toggle('hide', !show);
+  if (!show) return;
+  const step = guideSteps[guideIndex];
+  $('tourStepLabel').textContent = 'Tu configuración · Paso ' + (guideIndex + 1) + ' de ' + guideSteps.length;
+  $('tourTitle').textContent = step[0];
+  $('tourDescription').textContent = step[2].join(' ');
+  $('tourExample').textContent = step[3];
+  $('tourStatus').textContent = '';
+  $('tourContinue').textContent = tab !== step[4] ? 'Ir a ' + titles[step[4]] + ' →' :
+    guideIndex === guideSteps.length - 1 ? 'Terminar guía ✓' : 'Continuar →';
+}
 $('guideNext').onclick = () => {
-  if (guideIndex < 9) { guideIndex++; saveGuideProgress(); renderGuide(); }
-  else { guideDone = true; saveGuideProgress(); $('onboardingBanner').classList.add('hide'); setTab('home'); msg('Guía completada. Puedes volver a consultarla desde el menú.', 'success'); }
+  // The guide's button opens the task before advancing; the contextual Continue
+  // button moves to the next stage once the user completes this one.
+  if (tab === 'guide') { setTab(guideSteps[guideIndex][4]); return; }
+  advanceGuide();
 };
+$('tourContinue').onclick = () => {
+  if (!context || !rid || guideDone) return;
+  const step = guideSteps[guideIndex];
+  if (tab !== step[4]) { setTab(step[4]); return; }
+  // Do not claim a configuration task is finished before its data is saved.
+  if (guideIndex === 2 && (!areas.length || Math.abs(areas.reduce((n,a)=>n+Number(a.percentage),0)-100) > .0001)) {
+    $('tourStatus').textContent = 'Primero agrega tus áreas y haz que los porcentajes sumen 100%.';
+    $('areaName').focus(); return;
+  }
+  if (guideIndex === 3 && !workers.some(w=>w.active)) {
+    $('tourStatus').textContent = 'Agrega al menos una persona de tu equipo para continuar.';
+    $('workerName').focus(); return;
+  }
+  if (guideIndex === 6 && !days.length && !flexShifts.length) {
+    $('tourStatus').textContent = 'Guarda una jornada antes de continuar al reparto.';
+    $('saveDay').focus(); return;
+  }
+  advanceGuide();
+};
+$('tourHelp').onclick = () => setTab('guide');
+$('tourClose').onclick = () => { tourDismissed = true; renderTour(); };
 $('restartGuide').onclick = () => { guideIndex = 0; guideDone = false; saveGuideProgress(); renderGuide(); };
 $('keepSession').checked = keepSession;
 $('keepSession').onchange = () => { storage.set(KEEP_SESSION_KEY,$('keepSession').checked ? '1' : '0'); location.reload(); };
@@ -1022,6 +1082,7 @@ bind('saveDay', async () => {
   if (!stored || Number(stored.amount_clp)!==amount) throw Error('La base de datos no confirmó el monto de la jornada. Revisa el historial antes de intentarlo de nuevo.');
   $('daySaveStatus').textContent = 'Jornada del '+dateLabel(date)+' guardada correctamente por '+clp(amount)+'.';
   $('daySaveStatus').className = 'notice success spaced';
+  if (!guideDone && guideIndex >= 4 && guideIndex <= 6) { guideIndex = 7; saveGuideProgress(); }
   setTab('distribution'); msg('Jornada del '+dateLabel(date)+' guardada: '+clp(amount)+'. Reparto calculado.','success');
 });
 function openPayout(e) {
