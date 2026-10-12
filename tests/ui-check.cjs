@@ -54,7 +54,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=registro-v1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=sandbox-v1'),'App asset is versioned');
+  assert(html.includes('app.js?v=preflight-v1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v3'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');

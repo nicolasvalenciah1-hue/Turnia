@@ -306,6 +306,17 @@ async function logout() {
 bind('logout', logout);
 bind('logoutTop', logout);
 bind('pendingLogout', logout);
+bind('sandboxPreflight', async () => {
+  const notice=$('sandboxPreflightStatus');
+  notice.classList.remove('hide');
+  notice.textContent='Comprobando vendedor de Mercado Pago sin iniciar pagos…';
+  try {
+    const response=check(await sb.functions.invoke('turnia-sandbox-preflight',{body:{}}));
+    notice.textContent=response.ready
+      ? 'Vendedor de prueba verificado. Los pagos siguen desactivados hasta completar la verificación.'
+      : 'Comprobación pendiente: '+String(response.reason || response.note || 'Revisa la configuración del vendedor de prueba.');
+  } catch(e) { notice.textContent='No se pudo comprobar el vendedor: '+errorText(e); }
+});
 bind('sandboxPay', async () => {
   if ($('sandboxCheckoutPanel').classList.contains('hide'))
     throw Error('Las pruebas de pago todavía no están habilitadas.');
