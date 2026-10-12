@@ -28,7 +28,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     signInWithPassword:async()=>{session={user};return {data:{session}};},
     signOut:async()=>{session=null;authChange('SIGNED_OUT');return {data:{}};},
     signUp:async args=>{calls.push(['signup',args]);return {data:{}};},
-    resetPasswordForEmail:async()=>({data:{}}),updateUser:async args=>{calls.push(['updateUser',args]);return {data:{user}};}
+    resend:async args=>{calls.push(['resend',args]);return {data:{}};},resetPasswordForEmail:async()=>({data:{}}),updateUser:async args=>{calls.push(['updateUser',args]);return {data:{user}};}
   },rpc:async(name,args)=>{
     calls.push([name,args]);
     if(name==='propina_account_context')return {data:context};
@@ -54,7 +54,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=registro-v1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=mp-validation-20261012-2'),'App asset is versioned');
+  assert(html.includes('app.js?v=confirm-email-v1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v3'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
@@ -118,6 +118,9 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   assert(!pending.d.querySelector('#auth').classList.contains('hide'),'Pending customer can sign out');
   pending.dom.window.close();
   const d=await app({loggedIn:false});assert(!d.d.querySelector('#auth').classList.contains('hide'));assert(d.d.querySelector('#app').classList.contains('hide'));
+  d.d.querySelector('#email').value='test-recipient@example.test';
+  d.d.querySelector('#resendConfirmation').click();await flush();
+  assert(d.calls.some(x=>x[0]==='resend' && x[1].type==='signup' && x[1].email==='test-recipient@example.test' && x[1].options.emailRedirectTo==='https://turnia.test/'),'Confirmation resend uses the existing address and site URL');
   d.d.querySelector('#register').click();await flush();assert(!d.d.querySelector('#inviteBox').classList.contains('hide'));d.dom.window.close();
   console.log('PASS: navigation, account name, role controls, save payload, restaurant isolation, history filter, CSV safety, onboarding, recovery and signed-out state. No production writes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

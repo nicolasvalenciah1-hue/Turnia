@@ -44,6 +44,8 @@ function errorText(e) {
   const message = e?.message || String(e);
   if (/Invalid login credentials/i.test(message)) return 'El correo o la contraseña no coinciden. Revísalos e inténtalo de nuevo.';
   if (/Email not confirmed/i.test(message)) return 'Confirma tu correo antes de iniciar sesión.';
+  if (/rate limit exceeded|over_email_send_rate_limit|429/i.test(message)) return 'Supabase alcanzó el límite temporal de correos. Espera antes de solicitar otro enlace y revisa tu bandeja de entrada.';
+  if (/Email link is invalid|token expired/i.test(message)) return 'El enlace de confirmación ya no es válido. Solicita uno nuevo.';
   if (/Failed to fetch|NetworkError/i.test(message)) return 'No pudimos conectar. Revisa tu internet e inténtalo de nuevo.';
   return message;
 }
@@ -286,6 +288,12 @@ bind('register', async () => {
   if (!$('email').checkValidity() || !$('email').value || $('password').value.length < 8) throw Error('Ingresa un correo válido y una contraseña de al menos 8 caracteres.');
   check(await sb.auth.signUp({email:$('email').value.trim(),password:$('password').value,options:{emailRedirectTo:location.origin+'/',data:{propina_invitation:token}}}));
   msg('Revisa tu correo y confirma tu cuenta. Después inicia sesión y activa tu invitación en Accesos y ajustes.','success');
+});
+bind('resendConfirmation', async () => {
+  const email=$('email').value.trim();
+  if(!email || !$('email').checkValidity()) throw Error('Escribe primero el correo con el que creaste tu cuenta.');
+  check(await sb.auth.resend({type:'signup',email,options:{emailRedirectTo:location.origin+'/'}}));
+  msg('Si tu correo está pendiente de confirmación, recibirás un nuevo enlace. Abre únicamente el mensaje más reciente.','success');
 });
 bind('forgot', async () => {
   if (!$('email').value || !$('email').checkValidity()) throw Error('Escribe primero tu correo electrónico.');
