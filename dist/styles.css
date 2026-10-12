@@ -11,3 +11,13 @@
 .top-logout:hover:not(:disabled){background:#f0f6f5}
 @media(max-width:800px){.top-actions .badge{display:none}}
 @media(max-width:580px){.top-logout{padding:9px 10px;min-height:44px}.restaurant-switcher{min-width:0}.restaurant-switcher select{min-width:0}}
+
+/* v2: keep sign-out visible on every viewport, even when the restaurant name is long. */
+.topbar{min-width:0}
+.topbar .restaurant-switcher{flex:1 1 200px;width:auto;min-width:0}
+.topbar .restaurant-switcher select{width:100%;min-width:0;text-overflow:ellipsis}
+.topbar .top-actions{margin-left:auto;flex:0 0 auto;min-width:0}
+.topbar .top-logout{display:inline-flex!important;visibility:visible!important;opacity:1!important;flex:0 0 auto}
+@media(max-width:1900px){.topbar .account-email{display:none}}
+@media(max-width:1100px){.topbar .top-actions .badge{display:none}}
+@media(max-width:800px){.topbar .restaurant-switcher{flex:1 1 130px}}
