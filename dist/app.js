@@ -278,7 +278,7 @@ async function init() {
   $('account').textContent = user.email;
   const name = context.display_name || user.email;
   $('profileName').textContent = name;
-  $('profileRole').textContent = context.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
+  $('profileRole').textContent = context.platform_admin ? 'MUTAVIA GROUP · Creador de Turnia' : roleLabel(currentRestaurant()?.role);
   renderAccountSettings();
   if (rid && currentRestaurant()?.role === 'owner') void loadRestaurantBusiness(rid);
   $('avatar').textContent = name.split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase();
@@ -645,6 +645,20 @@ bind('viewGlobalTips', async () => {
   setTab('distribution');
 });
 bind('refreshMyTips', async () => { await init(); setTab(hasWorkerLink() ? 'mytips' : 'access'); });
+function renderPlatformRestaurants() {
+  const showArchived = $('showArchivedRestaurants').checked;
+  const visible = platformRestaurants.map((restaurant,index) => ({restaurant,index}))
+    .filter(({restaurant}) => showArchived || !restaurant.archived_at);
+  $('platformRestaurants').innerHTML = visible.map(({restaurant,index}) => {
+    const archived = !!restaurant.archived_at;
+    const state = archived ? 'Archivado' : restaurant.active ? 'Activo' : 'Suspendido';
+    const actions = archived
+      ? `<button class="ghost small" type="button" data-restaurant-archive="${index}">Restaurar restaurante</button>`
+      : `<button class="ghost small" type="button" data-restaurant-status="${index}">${restaurant.active ? 'Suspender acceso' : 'Reactivar acceso'}</button> <button class="ghost small" type="button" data-restaurant-archive="${index}">Archivar restaurante</button>`;
+    return `<tr><td><strong>${safe(restaurant.name)}</strong><small class="state-text">${safe(restaurant.email)}</small></td><td><span class="badge ${archived || !restaurant.active ? 'gray' : ''}">${state}</span></td><td>${Number(restaurant.members)||0}</td><td><label class="state-text" for="restaurantReason${index}">Motivo del cambio</label><input id="restaurantReason${index}" data-restaurant-reason="${index}" maxlength="500" placeholder="Indica el motivo"><div class="row spaced">${actions}</div></td></tr>`;
+  }).join('') || emptyRow(4,showArchived ? 'No hay restaurantes registrados.' : 'No hay restaurantes sin archivar.');
+}
+$('showArchivedRestaurants').onchange=renderPlatformRestaurants;
 async function loadPlatform() {
   const version = ++platformVersion;
   if (!context?.platform_admin) return;
@@ -655,9 +669,10 @@ async function loadPlatform() {
     const result = await call('propina_platform_snapshot');
     if (version !== platformVersion || !context?.platform_admin) return;
     platformRestaurants = result.restaurants || []; platformInvitations = result.invitations || [];
-    $('platformRestaurants').innerHTML = platformRestaurants.map((restaurant, index) => `<tr><td><strong>${safe(restaurant.name)}</strong><small class="state-text">${safe(restaurant.email)}</small></td><td><span class="badge ${restaurant.active ? '' : 'gray'}">${restaurant.active ? 'Activo' : 'Suspendido'}</span></td><td>${Number(restaurant.members) || 0}</td><td><label class="state-text" for="restaurantReason${index}">Motivo del cambio</label><input id="restaurantReason${index}" data-restaurant-reason="${index}" maxlength="500" placeholder="Indica el motivo"><button class="ghost small" data-restaurant-status="${index}">${restaurant.active ? 'Suspender acceso' : 'Reactivar acceso'}</button></td></tr>`).join('') || emptyRow(4,'No hay restaurantes registrados.');
+    renderPlatformRestaurants();
     $('platformInvitations').innerHTML = invitationRows(platformInvitations, true);
-    $('platformStatus').textContent = `${platformRestaurants.length} restaurante(s) · ${platformRestaurants.filter(r => r.active).length} activo(s). Los cobros permanecen desactivados.`;
+    const archived=platformRestaurants.filter(r=>!!r.archived_at).length;
+    $('platformStatus').textContent = `${platformRestaurants.length} restaurante(s) · ${platformRestaurants.filter(r => r.active && !r.archived_at).length} activo(s) · ${archived} archivado(s). Los cobros permanecen desactivados.`;
   } catch (error) {
     if (version === platformVersion && context?.platform_admin) $('platformStatus').textContent = 'No se pudo consultar el panel. ' + errorText(error);
   }
@@ -689,7 +704,7 @@ $('teamAccessPanel').addEventListener('click', event => {
   }, button);
 });
 $('platformOverview').addEventListener('click', event => {
-  const button = event.target.closest('[data-restaurant-status],[data-platform-revoke]');
+  const button = event.target.closest('[data-restaurant-status],[data-restaurant-archive],[data-platform-revoke]');
   if (!button) return;
   guard(async () => {
     if (!context?.platform_admin) throw Error('Solo el propietario de Turnia puede administrar la plataforma.');
@@ -699,15 +714,27 @@ $('platformOverview').addEventListener('click', event => {
       if (!confirm(`¿Revocar la invitación de ${invitation.email}? Ese código dejará de funcionar.`)) return;
       await call('propina_revoke_invitation', {iid:invitation.id});
     } else {
-      const index = Number(button.dataset.restaurantStatus), restaurant = platformRestaurants[index];
+      const archiving = button.dataset.restaurantArchive !== undefined;
+      const index = Number(archiving ? button.dataset.restaurantArchive : button.dataset.restaurantStatus);
+      const restaurant = platformRestaurants[index];
       if (!restaurant) throw Error('Actualiza la lista de restaurantes.');
-      const reason = document.querySelector(`[data-restaurant-reason="${index}"]`).value.trim();
+      const reason = document.querySelector(`[data-restaurant-reason="${index}"]`)?.value.trim() || '';
       if (reason.length < 3 || reason.length > 500) throw Error('Indica un motivo de entre 3 y 500 caracteres.');
-      if (!confirm(`¿${restaurant.active ? 'Suspender' : 'Reactivar'} el acceso de ${restaurant.name}? Sus usuarios, jornadas y propinas se conservarán.`)) return;
-      await call('propina_set_restaurant_status', {rid:restaurant.id,enabled:!restaurant.active,change_reason:reason});
+      if (archiving) {
+        const shouldArchive = !restaurant.archived_at;
+        const entered = prompt(`Para ${shouldArchive ? 'archivar' : 'restaurar'} este restaurante, escribe exactamente su nombre: ${restaurant.name}`);
+        if (entered === null) return;
+        if (entered.trim() !== restaurant.name) throw Error('El nombre de confirmación no coincide. No se hizo ningún cambio.');
+        if (!confirm(`${shouldArchive ? 'Archivar' : 'Restaurar'} «${restaurant.name}»? ${shouldArchive ? 'Se ocultará del uso normal y perderá acceso operativo, pero se conservarán los usuarios, trabajadores y todas las propinas.' : 'Se devolverá su acceso anterior y se conservarán sus datos.'}`)) return;
+        await call('propina_set_restaurant_archive', {rid:restaurant.id,should_archive:shouldArchive,change_reason:reason,expected_name:restaurant.name});
+      } else {
+        if (restaurant.archived_at) throw Error('Restaura este restaurante antes de modificar su acceso.');
+        if (!confirm(`¿${restaurant.active ? 'Suspender' : 'Reactivar'} el acceso de ${restaurant.name}? Sus usuarios, jornadas y propinas se conservarán.`)) return;
+        await call('propina_set_restaurant_status', {rid:restaurant.id,enabled:!restaurant.active,change_reason:reason});
+      }
       await init(); setTab('owner');
     }
-    await loadPlatform(); msg('Administración actualizada. No se realizó ningún cobro.', 'success');
+    await loadPlatform(); msg('Administración actualizada. Los restaurantes y las propinas se conservan. No se realizó ningún cobro.', 'success');
   }, button);
 });
 const guideSteps = [
@@ -921,7 +948,7 @@ $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData(); renderAccountSettings();
   if(currentRestaurant()?.role==='owner')void loadRestaurantBusiness(rid);
   if (tab === 'access') void loadTeam();
-  $('profileRole').textContent = context?.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
+  $('profileRole').textContent = context?.platform_admin ? 'MUTAVIA GROUP · Creador de Turnia' : roleLabel(currentRestaurant()?.role);
   setTab(personalOnly() ? 'mytips' : tab === 'mytips' && !hasWorkerLink() ? 'home' : tab);
   await load();
 });
