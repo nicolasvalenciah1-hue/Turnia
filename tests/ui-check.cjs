@@ -6,13 +6,13 @@ const html = fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
-async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}}={}) {
+async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}}={}) {
   const dom = new JSDOM(html,{url:'https://turnia.test/',runScripts:'outside-only'}), w=dom.window, d=w.document;
   const calls=[]; let capturedBlob; const errors=[];
   w.addEventListener('error',e=>errors.push(e.error));
-  const user={id:'test-user',email:'owner@example.test',user_metadata:registered?{turnia_registration:'v1'}:{}};
+  const user={id:'test-user',email:'owner@example.test',user_metadata:registered?{turnia_registration:'v1'}:invitationCode?{propina_invitation:invitationCode}:{}};
   let session=loggedIn?{user}:null, storedPassword=initialPassword;
-  const context={display_name:'Nicolás Valencia',platform_admin:platform,can_create:platform||!restaurant,restaurants:restaurant?[{id:'r1',name:'Local uno',role,...restaurantContext},{id:'r2',name:'Local dos',role}]:[]};
+  const context={display_name:'Nicolás Valencia',platform_admin:platform,can_create:platform||!restaurant&&!invitationCode,restaurants:restaurant?[{id:'r1',name:'Local uno',role,...restaurantContext},{id:'r2',name:'Local dos',role}]:[]};
   if(completed)w.localStorage.setItem('turnia_guide_v1_test-user',JSON.stringify({done:true,step:9}));
   const data={
     propina_areas:[{id:'a1',name:'Garzones',percentage:100}],
@@ -22,6 +22,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     propina_flex_shifts:[],propina_flex_payouts:[],
     propina_daily_distribution:[{day_id:'d1',work_date:'2026-10-01',worker_name:'=FORMULA',area_name:'Garzones',hours:8,percentage:100,calculated_clp:40000},{day_id:'d1',work_date:'2026-10-01',worker_name:'Camila',area_name:'Garzones',hours:12,percentage:100,calculated_clp:60000}]
   };
+  let business={}, redeemed=false;
   let authChange;
   const sb={auth:{
     getSession:async()=>({data:{session}}),
@@ -34,6 +35,25 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     calls.push([name,args]);
     if(rpcOverrides[name])return rpcOverrides[name](args);
     if(name==='propina_account_context')return {data:context};
+    if(name==='propina_accept_invitation') {
+      if(redeemed)return {error:{message:'Invitación ya utilizada.'}};
+      redeemed=true;context.can_create=true;
+      return {data:{role:'restaurant_owner',restaurant_id:null}};
+    }
+    if(name==='propina_create_restaurant_with_profile') {
+      if(!context.can_create)return {error:{message:'No hay una aprobación pendiente.'}};
+      business=args.profile;
+      context.restaurants.push({id:'rNew',name:args.restaurant_name,role:'owner'});
+      context.can_create=false;
+      return {data:'rNew'};
+    }
+    if(name==='propina_restaurant_business_profile')return {data:business};
+    if(name==='propina_update_restaurant_business_profile'){
+      const r=context.restaurants.find(r=>r.id===args.rid);
+      if(r)r.name=args.restaurant_name;
+      business=args.profile;
+      return {data:{id:args.rid,name:args.restaurant_name}};
+    }
     if(name==='propina_update_restaurant_name'){const r=context.restaurants.find(r=>r.id===args.p_restaurant_id);if(r)r.name=args.p_name;return {data:{id:args.p_restaurant_id,name:args.p_name}};}
     if(name==='turnia_registration_status')return {data:{status:'pending_payment',restaurant_name:'Restaurante de prueba'}};
     if(name==='turnia_sandbox_checkout_available')return {data:false};
@@ -65,10 +85,10 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=flex-shifts-20261012-2'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=flex-shifts-20261012-2'),'App asset is versioned');
+  assert(html.includes('styles.css?v=unified-onboarding-20261012-1'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=unified-onboarding-20261012-1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
-  assert(sw.includes('turnia-shell-v6'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v7'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
   // Personal settings can be used by every logged-in user.
   a.d.querySelector('[data-tab="access"]').click();
@@ -88,13 +108,22 @@ if (require.main === module) (async()=>{
   assert.equal(a.d.querySelector('#currentAccountPassword').value,'','Old password is cleared after success');
   a.d.querySelector('#restaurantEditName').value='Restaurante Nuevo';
   a.d.querySelector('#saveRestaurantDetails').click();await flush();
-  assert(a.calls.some(x=>x[0]==='propina_update_restaurant_name' && x[1].p_restaurant_id==='r1' && x[1].p_name==='Restaurante Nuevo'),'Restaurant updated via owner RPC');
+  assert(a.calls.some(x=>x[0]==='propina_update_restaurant_business_profile' && x[1].rid==='r1' && x[1].restaurant_name==='Restaurante Nuevo'),'Restaurant updated via owner RPC');
   assert.equal(a.d.querySelector('#restaurant').selectedOptions[0].textContent,'Restaurante Nuevo','Renamed restaurant appears in selector');
 
   assert(!a.d.querySelector('#ownerNav').classList.contains('hide'));
-  for(const name of ['home','daily','flex','distribution','history','staff','access','guide','owner']){
+  for(const name of ['home','daily','distribution','history','staff','access','guide','owner']){
     a.d.querySelector(`[data-tab="${name}"]`).click(); assert(!a.d.getElementById(name).classList.contains('hide'),name+' navigation');
   }
+  a.d.querySelector('[data-tab="daily"]').click();
+  a.d.querySelector('#dayEntryMode').value='flex';
+  a.d.querySelector('#dayEntryMode').dispatchEvent(new a.w.Event('change'));
+  assert(!a.d.querySelector('#flex').classList.contains('hide'),'AM/PM mode appears inside Registrar propinas');
+  assert(a.d.querySelector('#classicDayPanel').classList.contains('hide'),'Classic form hidden while AM/PM selected');
+  a.d.querySelector('#dayEntryMode').value='classic';
+  a.d.querySelector('#dayEntryMode').dispatchEvent(new a.w.Event('change'));
+  assert(!a.d.querySelector('#classicDayPanel').classList.contains('hide'),'Classic mode restored');
+  assert(a.d.querySelector('[data-tab="flex"]')===null,'Duplicate AM/PM navigation item was removed');
   a.d.querySelector('#historyRows [data-open-date]').click();
   assert.equal(a.d.querySelector('#payouts').children.length,2);
   assert.match(a.d.querySelector('#summary').textContent,/100.000/);
@@ -136,11 +165,18 @@ if (require.main === module) (async()=>{
   assert(b.d.querySelector('#ownerNav').classList.contains('hide'));assert(b.d.querySelector('#staffInvitePanel').classList.contains('hide'));
   assert(!b.d.querySelector('[data-update-area]'));assert(!b.d.querySelector('[data-toggle-worker]'));b.dom.window.close();
   const c=await app({platform:false,restaurant:false,completed:false});
-  assert(!c.d.querySelector('#guide').classList.contains('hide'),'Approved new client sees tutorial');
+  assert(!c.d.querySelector('#restaurantSetup').classList.contains('hide'),'Approved client goes straight to restaurant setup');
+  assert(c.d.querySelector('#app').classList.contains('hide'),'Operational app stays closed until restaurant exists');
+  c.d.querySelector('#setupRestaurantName').value='Restaurante Piloto';
+  c.d.querySelector('#setupCity').value='Copiapó';
+  c.d.querySelector('#setupRegion').value='Atacama';
+  c.d.querySelector('#setupPhone').value='+56 9 5555 5555';
+  c.d.querySelector('#completeRestaurantSetup').click();await flush();
+  assert(c.calls.some(x=>x[0]==='propina_create_restaurant_with_profile' && x[1].profile.city==='Copiapó'),'Onboarding creates restaurant with contact details atomically');
+  assert(!c.d.querySelector('#guide').classList.contains('hide'),'New restaurant goes to onboarding guide');
   for(let i=0;i<10;i++)c.d.querySelector('#guideNext').click();
   assert(JSON.parse(c.w.localStorage.getItem('turnia_guide_v1_test-user')).done);
-  c.d.querySelector('#acceptToken').value='a'.repeat(64); c.d.querySelector('#acceptInvite').click();await flush();
-  assert(!c.d.querySelector('#guide').classList.contains('hide'),'Invite activation opens tutorial');
+  assert(c.context.restaurants.some(r=>r.name==='Restaurante Piloto'),'Approved restaurant is visible to its owner');
   assert.equal(c.d.querySelector('#guideProgressText').textContent,'Paso 1 de 10');
   c.authChange('PASSWORD_RECOVERY');assert(!c.d.querySelector('#recovery').classList.contains('hide'));
   c.d.querySelector('#newPassword').value='NewPass1234';c.d.querySelector('#confirmPassword').value='NewPass1234';c.d.querySelector('#savePassword').click();await flush();
@@ -164,7 +200,9 @@ if (require.main === module) (async()=>{
 
   // Independent AM/PM mode: enforce a recorded agreement for weighted participants.
   const flex=await app({platform:false,role:'owner'});
-  flex.d.querySelector('[data-tab="flex"]').click();
+  flex.d.querySelector('[data-tab="daily"]').click();
+  flex.d.querySelector('#dayEntryMode').value='flex';
+  flex.d.querySelector('#dayEntryMode').dispatchEvent(new flex.w.Event('change'));
   flex.d.querySelector('#flexDate').value='2026-10-09';
   flex.d.querySelector('#flexDate').dispatchEvent(new flex.w.Event('change'));
   flex.d.querySelector('#flexAmount').value='1001';
@@ -195,6 +233,27 @@ if (require.main === module) (async()=>{
   flex.d.querySelector('#saveFlexShift').click();await flush();
   assert.equal(flex.calls.filter(x=>x[0]==='propina_save_flex_shift').length,savedCount,'Cannot duplicate an existing classic date');
   flex.dom.window.close();
+
+
+  // A token from verified signup is redeemed automatically, exactly once,
+  // then the customer is taken to restaurant setup without copying it again.
+  const invited=await app({platform:false,restaurant:false,invitationCode:'a'.repeat(64)});
+  assert.equal(invited.calls.filter(x=>x[0]==='propina_accept_invitation').length,1,'Signed-up invitation is redeemed once');
+  assert.equal(invited.calls.find(x=>x[0]==='propina_accept_invitation')[1].token,'a'.repeat(64));
+  assert(!invited.d.querySelector('#restaurantSetup').classList.contains('hide'),'Invited customer sees restaurant setup');
+  assert.equal(invited.user.user_metadata.propina_invitation,null,'Redeemed code removed from account metadata');
+  await invited.w.eval('void 0');
+  assert.equal(invited.calls.filter(x=>x[0]==='propina_accept_invitation').length,1,'No automatic second redemption');
+  invited.dom.window.close();
+
+  // A legacy confirmed user without token can activate a single-use code.
+  const legacy=await app({platform:false,role:'viewer',restaurant:false,invitationCode:'invalid'});
+  assert(!legacy.d.querySelector('#inviteActivation').classList.contains('hide'),'Legacy account can paste activation code');
+  legacy.d.querySelector('#activationToken').value='b'.repeat(64);
+  legacy.d.querySelector('#activateInvitation').click();await flush();
+  assert(legacy.calls.some(x=>x[0]==='propina_accept_invitation'&&x[1].token==='b'.repeat(64)));
+  assert(!legacy.d.querySelector('#restaurantSetup').classList.contains('hide'),'Legacy owner activation proceeds to setup');
+  legacy.dom.window.close();
 
   // Password change is accepted only when the supplied current password is valid.
   const invalidCurrent=await app({platform:false,role:'owner'});
