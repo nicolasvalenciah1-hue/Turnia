@@ -29,10 +29,6 @@ w.supabase={createClient:()=>({
  rpc:async()=>({data:null,error:null})
 })};
 w.eval(js);
-(async()=>{
-await new Promise(r=>setTimeout(r,15));
-assert(!d.getElementById('submitRegistration').hidden,'test initialization');
-})().catch(()=>{});
 const click=id=>d.getElementById(id).click();
 const fill=(id,v)=>{d.getElementById(id).value=v;};
 (async()=>{
