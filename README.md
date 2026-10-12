@@ -61,3 +61,21 @@ este último solo desde una conexión administrativa de la base correcta; no edi
 La migración `20261012043242_account_admin_hardening.sql` se aplicó al proyecto existente.
 El resto del historial de Supabase incluye migraciones previas que no están completas en este
 repositorio: no se debe usar esta carpeta para reconstruir la base ni ejecutar un reset.
+
+## Cuentas vinculadas a trabajadores
+
+La propuesta de vinculación agrega en **Accesos y ajustes** un formulario para asociar
+una cuenta de consulta existente con su ficha, o emitir una invitación personal ya vinculada.
+Solo el propietario del local administra estas vinculaciones. Requiere confirmar el acuerdo
+del equipo y guardar una nota: es una declaración del propietario, no una votación digital.
+
+**Mis propinas** muestra fechas, horas y montos de esa persona, con filtro de fechas.
+Por defecto el acceso vinculado es personal. La opción compartida permite consultar también
+todo el local y debe acordarse explícitamente. Las cuentas existentes conservan sus permisos
+hasta una acción expresa; no hay asociaciones automáticas por nombre o correo.
+
+`tests/worker-links-check.cjs` verifica la interfaz con Auth simulado.
+`tests/database-worker-links.sql` verifica aislamiento y redondeo usando identidades existentes
+y datos temporales revertidos. La migración `20261012162747_worker_account_links.sql` depende
+del esquema existente y debe aplicarse antes de publicar el frontend. Está preparada y
+verificada mediante ROLLBACK; pendiente de aprobación para su aplicación permanente.
