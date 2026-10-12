@@ -1,0 +1,32 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Diagnóstico Turnia 3</title><style>body{font-family:system-ui;background:#f5f7f6;color:#14283f;margin:0;padding:24px}main{max-width:650px;margin:5vh auto;background:white;border:1px solid #d9e3e5;border-radius:20px;padding:32px}h1{line-height:1.2}button{background:#087f8c;color:white;border:0;border-radius:12px;padding:15px;cursor:pointer;font-weight:700}button:disabled{opacity:.5}pre{white-space:pre-wrap;font-family:inherit;background:#e9f3f6;padding:20px;border-radius:14px;line-height:1.7}a{color:#087f8c}</style></head><body><main><p>TURNIA · DIAGNÓSTICO INDEPENDIENTE V3</p><h1>Consultar suscripción pendiente</h1><p>Solo lectura. No crea ni confirma cobros.</p><button id="inspect" disabled>Revisar orden en Mercado Pago</button><pre id="status" aria-live="polite">Comprobando sesión…</pre><p><a href="./">Volver a Turnia</a></p></main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script><script>
+(async()=>{
+ const button=document.getElementById('inspect'),status=document.getElementById('status');
+ if(!window.supabase){status.textContent='No se pudo cargar Supabase.';return;}
+ const sb=window.supabase.createClient('https://kfaolqnrqlypoyzkejlt.supabase.co','sb_publishable_uT_FeTqwfX8AhkUtgmo--Q_bemTQkwP');
+ try{
+ const {data:{session},error}=await sb.auth.getSession();
+ if(error||!session){status.textContent='Inicia sesión en Turnia con el restaurante de prueba y vuelve aquí.';return;}
+ button.disabled=false;status.textContent='Sesión detectada. Puedes consultar sin realizar pagos.';
+ button.onclick=async()=>{
+ button.disabled=true;status.textContent='Consultando la orden…';
+ try{
+ const {data,error}=await sb.functions.invoke('turnia-inspect-test-subscription',{body:{}});
+ if(error||!data?.checked){status.textContent='No se pudo verificar la orden. No realices pagos.';return;}
+ const flag=v=>v===true?'Sí':v===false?'No':'No verificado';
+ status.textContent=[
+ 'Diagnóstico Turnia V3',
+ 'Estado: '+String(data.status||'desconocido'),
+ 'Vendedor de prueba: '+flag(data.seller_is_test),
+ 'Comprador autorizado coincide: '+flag(data.trusted_buyer_id_matches),
+ 'Importe correcto: '+flag(data.amount_and_currency_match),
+ 'Referencia correcta: '+flag(data.reference_matches),
+ 'Suscripción pertenece al vendedor: '+flag(data.collector_matches_seller),
+ 'Cuentas de prueba vinculadas: '+flag(data.test_accounts_aligned),
+ 'Campo entorno: '+String(data.environment||'no informado'),
+ 'Pagos y activaciones permanecen desactivados.'
+ ].join('\n');
+ }catch(e){status.textContent='La consulta falló. No realices pagos.';}finally{button.disabled=false;}
+ };
+ }catch(e){status.textContent='No se pudo comprobar la sesión.';}
+})();
+</script></body></html>
