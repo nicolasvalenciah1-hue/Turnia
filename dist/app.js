@@ -100,6 +100,26 @@ async function init() {
     return;
   }
   context = await call('propina_account_context');
+  // New customer accounts must never enter the operational panel before the
+  // server creates an authorized restaurant after a verified payment.
+  if (user.user_metadata?.turnia_registration === 'v1' && !(context.restaurants || []).length) {
+    let registration = null;
+    try { registration = await call('turnia_registration_status'); } catch {
+      // Fail closed: no entry into the restaurant panel on a status error.
+    }
+    $('pendingRestaurant').textContent = registration?.restaurant_name || 'Tu restaurante';
+    $('pendingNotice').textContent = registration?.status === 'cancelled'
+      ? 'Este registro fue cancelado. Contacta con soporte antes de continuar.'
+      : registration?.status === 'active'
+        ? 'La activación está en proceso. Prueba a recargar la página en unos instantes.'
+        : 'Tu cuenta está pendiente de pago. Los cobros siguen desactivados y no se ha generado ningún cargo.';
+    $('app').classList.add('hide');
+    $('auth').classList.add('hide');
+    $('loading').classList.add('hide');
+    $('pendingRegistration').classList.remove('hide');
+    return;
+  }
+  $('pendingRegistration').classList.add('hide');
   const list = context.restaurants || [];
   rid = list.some(r => r.id === rid) ? rid : list[0]?.id || '';
   $('restaurant').innerHTML = list.length ? list.map(r => `<option value="${safe(r.id)}">${safe(r.name)}</option>`).join('') : '<option value="">Sin restaurante autorizado</option>';
@@ -269,6 +289,10 @@ bind('savePassword', async () => {
   $('newPassword').value = ''; $('confirmPassword').value = ''; recoveryMode = false;
   $('recovery').classList.add('hide'); await init(); msg('Contraseña actualizada.','success');
 });
+bind('pendingLogout', async () => {
+  check(await sb.auth.signOut());
+  await init();
+});
 bind('logout', async () => {
   check(await sb.auth.signOut()); context = null; user = null; rid = ''; loadVersion++;
   resetData(); closeDrawer(); setTab('home'); $('password').value = ''; $('invite').value = ''; $('acceptToken').value = '';
@@ -397,7 +421,7 @@ sb.auth.onAuthStateChange(event => {
   }
   if (event === 'SIGNED_OUT') {
     context = null; user = null; rid = ''; loadVersion++; recoveryMode = false; loadingData = false;
-    resetData(); $('app').classList.add('hide'); $('recovery').classList.add('hide'); $('auth').classList.remove('hide');
+    resetData(); $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('recovery').classList.add('hide'); $('auth').classList.remove('hide');
   }
 });
 $('date').value = today(); $('payoutDate').value = today(); setTab('home');

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14283f">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Crea tu restaurante · Turnia</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <style>
+    :root { color-scheme: light; --navy:#14283f; --teal:#087f8c; --gold:#d6a64b; --muted:#657483; --border:#dfe7e8; --paper:#fff; --bg:#f4f7f6; font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--navy); }
+    a { color:var(--teal); }
+    .header { background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px max(24px, calc((100vw - 1120px) / 2)); }
+    .brand { color:#fff; display:flex; gap:10px; align-items:center; text-decoration:none; }
+    .brand img { width:39px; height:39px; }
+    .brand strong { display:block; font-size:23px; letter-spacing:-1px; line-height:1; }
+    .brand small { font-size:10px; letter-spacing:.14em; color:#a9c1cc; }
+    .header > a:last-child { font-size:13px; color:#d7e5e9; }
+    main { max-width:1120px; padding:48px 24px 70px; margin:0 auto; }
+    .intro { max-width:750px; margin-bottom:28px; }
+    .eyebrow { color:var(--teal); text-transform:uppercase; letter-spacing:.16em; font-weight:750; font-size:11px; }
+    h1 { font-size:clamp(29px,4.4vw,43px); margin:12px 0; letter-spacing:-1.2px; }
+    p { line-height:1.55; color:var(--muted); font-size:14px; }
+    .demo-note { border:1px solid #edd7a5; background:#fff7e5; color:#74511a; padding:13px 16px; border-radius:12px; font-size:13px; margin:18px 0 30px; }
+    .layout { display:grid; grid-template-columns:260px minmax(0,1fr); gap:24px; align-items:start; }
+    aside { background:var(--navy); color:#fff; padding:26px 21px; border-radius:19px; }
+    aside h2 { font-size:15px; margin:0 0 22px; }
+    .steps { list-style:none; margin:0; padding:0; display:grid; gap:18px; }
+    .steps li { display:flex; align-items:center; gap:12px; color:#a9becc; font-size:13px; }
+    .steps span { display:grid; place-items:center; width:31px; height:31px; flex:none; border:1px solid #496377; border-radius:10px; font-weight:700; }
+    .steps li.current { color:#fff; font-weight:750; }
+    .steps li.current span { border-color:var(--gold); background:#295365; color:#fff; }
+    .steps li.done span { background:#177b7e; border-color:#177b7e; color:#fff; }
+    .aside-tip { font-size:12px; color:#b3c8d1; margin:34px 0 0; padding-top:24px; border-top:1px solid #385266; }
+    .sheet { border:1px solid var(--border); border-radius:19px; background:var(--paper); padding:32px; box-shadow:0 8px 26px #14283f08; }
+    .sheet h2 { margin:0 0 6px; font-size:23px; letter-spacing:-.4px; }
+    .sheet .sub { margin:0 0 27px; }
+    .pane[hidden] { display:none; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .full { grid-column:1/-1; }
+    label { display:block; font-size:12px; font-weight:650; margin-bottom:8px; color:#43566a; }
+    input, select { display:block; width:100%; height:45px; border:1px solid #d7e1e4; border-radius:10px; background:#fff; padding:11px 13px; font:inherit; color:var(--navy); }
+    input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline:3px solid var(--gold); outline-offset:3px; }
+    .hint { font-size:11px; color:var(--muted); margin-top:7px; }
+    .actions { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-top:30px; padding-top:23px; border-top:1px solid var(--border); }
+    button { background:var(--teal); color:white; border:1px solid transparent; border-radius:10px; padding:12px 19px; min-height:44px; cursor:pointer; font:inherit; font-size:13px; font-weight:700; }
+    button:hover { filter:brightness(.95); }
+    button:disabled { cursor:not-allowed; opacity:.55; }
+    .secondary { color:var(--navy); background:#edf1f2; border-color:var(--border); }
+    .card { border:2px solid var(--teal); border-radius:14px; padding:21px; background:#f2f9f8; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; gap:14px; }
+    .card strong { font-size:17px; }
+    .price { text-align:right; white-space:nowrap; font-size:25px; font-weight:800; }
+    .price small { display:block; font-size:11px; color:var(--muted); font-weight:400; }
+    .checkline { display:flex; gap:10px; align-items:flex-start; font-size:13px; font-weight:400; line-height:1.5; }
+    .checkline input { width:18px; height:18px; flex:none; margin:2px 0 0; }
+    .checkline span { color:#43566a; }
+    .summary { background:#f5f8f8; border:1px solid var(--border); border-radius:14px; padding:18px 20px; line-height:1.9; font-size:13px; }
+    .summary strong { color:var(--navy); }
+    .status { padding:16px; border-radius:12px; border:1px solid #dbddca; background:#fffaf0; margin-top:20px; color:#76551c; line-height:1.55; font-size:13px; }
+    .status.approved { border-color:#b6dfce; background:#edf9f1; color:#285a43; }
+    .status[hidden], .payment[hidden] { display:none; }
+    .payment { margin-top:16px; padding:20px; border:1px solid var(--border); border-radius:14px; }
+    .payment h3 { margin:0 0 8px; }
+    .payment p { margin-top:0; }
+    .page-footer { font-size:12px; color:var(--muted); margin-top:25px; text-align:center; }
+    @media(max-width:780px){main{padding:30px 16px 55px}.layout{display:block}aside{margin-bottom:16px;padding:18px}.steps{grid-template-columns:repeat(4,1fr);gap:5px}.steps li{flex-direction:column;font-size:10px;text-align:center}.aside-tip{display:none}.sheet{padding:24px 18px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.header{padding:16px}.card{align-items:start}.price{font-size:19px}}
+  </style>
+</head>
+<body>
+<header class="header">
+  <a class="brand" href="./"><img src="icon.svg" alt=""><span><strong>turnia</strong><small>CADA TURNO CUENTA</small></span></a>
+  <a href="./">Ya tengo una cuenta →</a>
+</header>
+<main>
+  <div class="intro">
+    <span class="eyebrow">Empieza con Turnia</span>
+    <h1>Tu restaurante, organizado desde el primer turno.</h1>
+    <p>Registra tus datos y los de tu restaurante. Cuando se habiliten los pagos y la pasarela confirme la transacción, Turnia podrá activar tu restaurante automáticamente.</p>
+  </div>
+  <div class="demo-note" role="note"><strong>Versión en desarrollo.</strong> El formulario está preparado para registrar una cuenta segura en Supabase, pero no se publicará hasta que validemos la migración. Los cobros y la activación siguen desactivados.</div>
+  <div class="layout">
+    <aside>
+      <h2>Tu registro, paso a paso</h2>
+      <ol class="steps" id="steps">
+        <li class="current" aria-current="step"><span>1</span>Tu información</li>
+        <li><span>2</span>Restaurante</li>
+        <li><span>3</span>Membresía</li>
+        <li><span>4</span>Confirmación</li>
+      </ol>
+      <p class="aside-tip">No se requiere aprobación manual. El acceso se activará solo después de la confirmación del pago por un servidor confiable. Hoy esa función permanece desactivada.</p>
+    </aside>
+    <div class="sheet">
+      <form id="registration" novalidate>
+        <section class="pane" data-stage="0">
+          <h2>Primero, cuéntanos sobre ti</h2>
+          <p class="sub">Serás la persona responsable de administrar el restaurante.</p>
+          <div class="grid">
+            <div><label for="firstName">Nombre</label><input id="firstName" name="firstName" required maxlength="70" autocomplete="given-name" placeholder="Ej. Sofía"></div>
+            <div><label for="lastName">Apellidos</label><input id="lastName" name="lastName" required maxlength="90" autocomplete="family-name" placeholder="Ej. Pérez"></div>
+            <div><label for="email">Correo electrónico</label><input id="email" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="sofia@restaurante.cl"></div>
+            <div><label for="phone">Teléfono de contacto</label><input id="phone" name="phone" type="tel" required maxlength="25" minlength="8" autocomplete="tel" placeholder="+56 9 1234 5678"></div>
+          </div>
+          <div class="grid"><div><label for="password">Contraseña</label><input id="password" type="password" required minlength="10" maxlength="72" autocomplete="new-password" placeholder="Mínimo 10 caracteres"></div><div><label for="confirmPassword">Confirmar contraseña</label><input id="confirmPassword" type="password" required minlength="10" maxlength="72" autocomplete="new-password"></div></div><p class="hint">Tu contraseña se envía directamente a Supabase Auth y nunca se guarda en los datos de tu restaurante.</p>
+        </section>
+        <section class="pane" data-stage="1" hidden>
+          <h2>Ahora, tu restaurante</h2>
+          <p class="sub">Necesitamos identificar el local que utilizará Turnia.</p>
+          <div class="grid">
+            <div class="full"><label for="restaurantName">Nombre comercial del restaurante</label><input id="restaurantName" name="restaurantName" required maxlength="80" placeholder="Ej. Restaurante La Terraza"></div>
+            <div><label for="businessType">Tipo de establecimiento</label><select id="businessType" name="businessType" required><option value="">Selecciona</option><option>Restaurante</option><option>Cafetería</option><option>Bar</option><option>Hotel</option><option>Otro</option></select></div>
+            <div><label for="rut">RUT de la empresa (opcional)</label><input id="rut" name="rut" maxlength="12" autocomplete="off" placeholder="12.345.678-9"></div>
+            <div><label for="city">Ciudad</label><input id="city" name="city" required maxlength="100" autocomplete="address-level2" placeholder="Ej. Copiapó"></div>
+            <div><label for="commune">Comuna</label><input id="commune" name="commune" required maxlength="100" placeholder="Ej. Copiapó"></div>
+            <div class="full"><label for="street">Dirección del local (opcional)</label><input id="street" name="street" maxlength="180" autocomplete="street-address" placeholder="Calle y número"></div>
+            <div><label for="staff">Tamaño del equipo (opcional)</label><select id="staff" name="staff"><option value="">Selecciona</option><option>1 a 5 personas</option><option>6 a 15 personas</option><option>16 a 30 personas</option><option>Más de 30</option></select></div>
+          </div>
+        </section>
+        <section class="pane" data-stage="2" hidden>
+          <h2>Elige tu membresía</h2>
+          <p class="sub">El acceso se activará automáticamente tras un pago verificado por nuestro servidor. Las compras aún no están habilitadas.</p>
+          <div class="card"><div><span class="eyebrow">Plan referencial</span><br><strong>Turnia mensual</strong><p style="margin:6px 0 0">Repartos, equipo, historial y tutorial.</p></div><div class="price">$5.000 <small>CLP / mes</small></div></div>
+          <label class="checkline" for="acknowledge"><input type="checkbox" id="acknowledge" required><span>Acepto solicitar una cuenta de Turnia y entiendo que el precio es referencial, no se procesarán pagos y el acceso permanecerá pendiente hasta que exista confirmación segura de pago.</span></label>
+          <p class="hint">Antes del lanzamiento se publicarán las condiciones comerciales, los términos y la política de privacidad.</p>
+        </section>
+        <section class="pane" data-stage="3" hidden>
+          <h2>Revisa el resumen</h2>
+          <p class="sub">Revisa tus datos antes de crear la cuenta. Recibirás un correo para verificar tu dirección y quedarás pendiente de pago.</p>
+          <div id="summary" class="summary" aria-live="polite"></div>
+          <div class="status" id="status" hidden role="status"></div>
+          <div class="payment" id="payment" hidden>
+            <h3>Método de pago · próximamente</h3>
+            <p>La pasarela de pago todavía no está habilitada. Turnia no solicita datos bancarios ni activa membresías en este paso.</p>
+            <button type="button" id="checkout" disabled>Continuar al pago (próximamente)</button>
+          </div>
+        </section>
+        <div class="actions">
+          <button class="secondary" id="back" type="button" hidden>← Volver</button>
+          <span id="stepCounter" class="hint" aria-live="polite">Paso 1 de 4</span>
+          <button id="next" type="button">Continuar →</button>
+          <button id="submitRegistration" type="button" hidden>Crear cuenta sin cobro</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <p class="page-footer">Turnia · Cada turno cuenta · Registro pendiente de pago · Sin cobros.</p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script>
+<script src="registro.js"></script>
+</body>
+</html>
