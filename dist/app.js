@@ -785,7 +785,7 @@ function renderGuide() {
   $('guideNav').innerHTML = guideSteps.map((s,i) => `<li><button data-guide-step="${i}" class="${i === guideIndex ? 'active' : ''} ${guideDone || i < guideIndex ? 'done' : ''}" ${i === guideIndex ? 'aria-current="step"' : ''}><span>${guideDone || i < guideIndex ? '✓' : i+1}</span>${s[0]}</button></li>`).join('');
   $('guideContent').innerHTML = `<p class="eyebrow">PASO ${String(guideIndex+1).padStart(2,'0')}</p><h2>${step[0]}</h2><p class="muted">${step[1]}</p><ul>${step[2].map(s => `<li>${s}</li>`).join('')}</ul><div class="guide-example">${step[3]}</div><button class="secondary" data-go="${step[4]}">Ir a ${titles[step[4]]} →</button>`;
   $('guidePrev').disabled = guideIndex === 0;
-  $('guideNext').textContent = guideIndex === guideSteps.length - 1 ? 'Terminar guía ✓' : 'Continuar a la tarea →';
+  $('guideNext').textContent = 'Abrir esta tarea →';
 }
 $('guideNav').addEventListener('click', e => { const el = e.target.closest('[data-guide-step]'); if (el) { guideIndex = Number(el.dataset.guideStep); saveGuideProgress(); renderGuide(); } });
 $('guidePrev').onclick = () => { if (guideIndex > 0) guideIndex--; saveGuideProgress(); renderGuide(); };
@@ -817,7 +817,12 @@ function renderTour() {
   $('tourContinue').textContent = tab !== step[4] ? 'Ir a ' + titles[step[4]] + ' →' :
     guideIndex === guideSteps.length - 1 ? 'Terminar guía ✓' : 'Continuar →';
 }
-$('guideNext').onclick = advanceGuide;
+$('guideNext').onclick = () => {
+  // The guide's button opens the task before advancing; the contextual Continue
+  // button moves to the next stage once the user completes this one.
+  if (tab === 'guide') { setTab(guideSteps[guideIndex][4]); return; }
+  advanceGuide();
+};
 $('tourContinue').onclick = () => {
   if (!context || !rid || guideDone) return;
   const step = guideSteps[guideIndex];
