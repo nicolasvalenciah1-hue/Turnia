@@ -18,13 +18,6 @@ Deno.serve(async req => {
   const {data:{user},error:userError} = await userClient.auth.getUser(auth.slice(7));
   if (userError || !user || !user.email_confirmed_at) return reply({error:"Confirm your email first"},403);
   const admin = createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
-  // A service-role-only RPC resolves the account and checks the disabled-by-default flag.
-  const reference=`turnia:${user.id}:${crypto.randomUUID()}`;
-  const {data:registration,error:registrationError}=await admin.rpc("turnia_prepare_sandbox_checkout",{
-    p_user_id:user.id,p_reference:reference
-  });
-  if(registrationError || !registration) return reply({error:"Sandbox checkout unavailable"},403);
-  if(Number(registration.price_clp)!==5000) return reply({error:"Invalid sandbox plan"},403);
   const mpToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
   if(!mpToken) return reply({error:"Sandbox seller credentials unavailable"},503);
   const sellerResponse=await fetch("https://api.mercadopago.com/users/me",
@@ -36,6 +29,13 @@ Deno.serve(async req => {
   if(!/^[^@\s]+@testuser\.com$/i.test(String(payer_email||""))
     || String(payer_email).toLowerCase()===String(seller.email).toLowerCase())
     return reply({error:"Use a separate Mercado Pago test buyer"},400);
+  // A service-role-only RPC resolves the account and checks the disabled-by-default flag.
+  const reference=`turnia:${user.id}:${crypto.randomUUID()}`;
+  const {data:registration,error:registrationError}=await admin.rpc("turnia_prepare_sandbox_checkout",{
+    p_user_id:user.id,p_reference:reference
+  });
+  if(registrationError || !registration) return reply({error:"Sandbox checkout unavailable"},403);
+  if(Number(registration.price_clp)!==5000) return reply({error:"Invalid sandbox plan"},403);
   const response=await fetch("https://api.mercadopago.com/preapproval",{
     method:"POST",headers:{Authorization:`Bearer ${mpToken}`,"Content-Type":"application/json"},
     signal:AbortSignal.timeout(15000),
