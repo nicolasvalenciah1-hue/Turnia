@@ -86,10 +86,11 @@ if (require.main === module) (async()=>{
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=unified-onboarding-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=owner-archive-mutavia-20261012-1'),'App asset is versioned');
+  assert(html.includes('app.js?v=mutavia-owner-avatar-20261012-1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v7'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
+   assert.equal(a.d.querySelector('#avatar').textContent,'M','Platform owner displays Mutavia monogram');
   // Personal settings can be used by every logged-in user.
   a.d.querySelector('[data-tab="access"]').click();
   assert.equal(a.d.querySelector('#accountDisplayName').value,'Nicolás Valencia');
@@ -99,6 +100,7 @@ if (require.main === module) (async()=>{
   a.d.querySelector('#saveAccountProfile').click();await flush();
   assert(a.calls.some(x=>x[0]==='updateUser' && x[1].data?.display_name==='Camila Sánchez' && x[1].data?.phone==='+56 9 4444 4444'),'Profile saved using authenticated Supabase Auth');
   assert.equal(a.d.querySelector('#profileName').textContent,'Camila Sánchez');
+   assert.equal(a.d.querySelector('#avatar').textContent,'M','Platform monogram persists after personal name change');
   a.d.querySelector('#currentAccountPassword').value='OldPassword123';
   a.d.querySelector('#nextAccountPassword').value='NewPassword123';
   a.d.querySelector('#nextAccountPasswordConfirm').value='NewPassword123';
@@ -350,6 +352,7 @@ if (require.main === module) (async()=>{
 
   // Role access: admins may edit shifts but cannot change ownership or team members.
   const admin=await app({platform:false,role:'admin'});
+   assert.equal(admin.d.querySelector('#avatar').textContent,'NV','Regular users retain their personal initials');
   assert(!admin.d.querySelector('#saveDay').disabled,'Restaurant administrator can save a shift');
   assert(admin.d.querySelector('#teamAccessPanel').classList.contains('hide'),'Admin cannot manage owner-only access');
   assert(admin.d.querySelector('#workerLinkPanel').classList.contains('hide'),'Admin cannot link worker accounts');
