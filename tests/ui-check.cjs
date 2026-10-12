@@ -222,6 +222,22 @@ if (require.main === module) (async()=>{
   assert(csvClassic.includes('"75"'),'CSV preserves the individual percentage');
   assert.equal(classic.errors.length,0);
   classic.dom.window.close();
+  // Double shift: 16 hours is already two points; 200% would multiply it again.
+  const doubles=await app({platform:false,role:'owner'});
+  doubles.d.querySelector('#date').value='2026-10-11';
+  doubles.d.querySelector('#date').dispatchEvent(new doubles.w.Event('change'));
+  doubles.d.querySelector('#amount').value='110000';
+  for(const wid of ['w1','w2']) doubles.d.querySelector('[data-present="'+wid+'"]').checked=true;
+  doubles.d.querySelector('[data-hours="w2"]').value='16';
+  doubles.d.querySelector('[data-hours="w2"]').dispatchEvent(new doubles.w.Event('input',{bubbles:true}));
+  assert.equal(doubles.d.querySelector('[data-day-points="w2"]').textContent,'2');
+  assert.match(doubles.d.querySelector('#attendanceCount').textContent,/3 puntos/);
+  doubles.d.querySelector('[data-day-percent="w2"]').value='200';
+  doubles.d.querySelector('[data-day-percent="w2"]').dispatchEvent(new doubles.w.Event('input',{bubbles:true}));
+  assert.match(doubles.d.querySelector('#classicPointsWarning').textContent,/supera 2 puntos/);
+  doubles.d.querySelector('#saveDay').click(); await flush();
+  assert(!doubles.calls.some(c=>c[0]==='propina_save_day'),'Four points on 16 hours are blocked');
+  doubles.dom.window.close();
   const b=await app({platform:false,role:'viewer'});
   assert(b.d.querySelector('#saveDay').disabled,'Viewer cannot save');
   assert(b.d.querySelector('[data-day-percent="w2"]').disabled,'Viewer cannot edit individual share');
