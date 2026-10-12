@@ -340,7 +340,8 @@ bind('sandboxPay', async () => {
       !target.hostname.endsWith('.mercadopago.cl'))
     throw Error('El destino de pago no pertenece a Mercado Pago.');
   notice.textContent='Mercado Pago abrió una orden de prueba. Continuando…';
-  location.assign(target.href);\n } catch (e) {
+  location.assign(target.href);
+ } catch (e) {
   $('sandboxPayMessage').classList.remove('hide');
   $('sandboxPayMessage').textContent='No se pudo preparar el pago de prueba: '+errorText(e);
  }
