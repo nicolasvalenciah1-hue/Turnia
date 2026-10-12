@@ -66,3 +66,18 @@
 #flex .page-heading h1{font-size:25px}
 #restaurantBusinessFields{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}
 @media(max-width:750px){.restaurant-setup{margin:12px;padding:19px;border-radius:13px}.restaurant-setup .grid.two{grid-template-columns:1fr}.restaurant-setup .row button{width:100%}#flex .page-heading h1{font-size:21px}}
+
+/* Support center: conversations and owner inbox */
+.support-ticket-card{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 0;border-bottom:1px solid var(--line)}
+.support-ticket-card:last-child{border-bottom:0}
+.support-ticket-card strong{display:block;font-size:14px;overflow-wrap:anywhere}
+.support-ticket-card .muted{margin:7px 0 0;font-size:12px}
+.support-ticket-card>div:last-child{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}
+.support-messages{display:grid;gap:12px;margin:18px 0;padding:0}
+.support-message{border-radius:12px;border:1px solid var(--line);background:#f8faf9;padding:14px 16px;overflow-wrap:anywhere}
+.support-message small{display:block;font-size:12px;color:#52606b}
+.support-message p{white-space:pre-wrap;line-height:1.6;margin:8px 0 0}
+.support-message.support-original{border-left:3px solid var(--accent,#1b7c75);background:#f4f8f7}
+#supportThread textarea,#supportComposePanel textarea{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;resize:vertical}
+#supportThread .row{flex-wrap:wrap}
+@media(max-width:650px){.support-ticket-card{align-items:flex-start;flex-direction:column}.support-ticket-card>div:last-child{justify-content:flex-start}.support-ticket-card button{min-height:40px}}
