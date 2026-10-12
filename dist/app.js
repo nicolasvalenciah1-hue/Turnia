@@ -333,8 +333,8 @@ bind('inspectSubscription', async () => {
     }
     const yesNo=x=>x===true?'sí':x===false?'no':'no verificado';
     const valid=result.eligible_for_payment_test===true;
-    const environment= result.environment==='test'?'Prueba confirmado'
-      :result.environment==='live'?'Real (NO continuar)':'No verificado';
+    const environment= result.environment==='test'?'Indicador de prueba presente'
+      :result.environment==='live'?'Indicador de producción (NO continuar)':'No informado por la API';
     const lines=[
       'Estado de la suscripción: '+String(result.status||'desconocido'),
       'Vendedor de prueba: '+yesNo(result.seller_is_test),
@@ -344,6 +344,8 @@ bind('inspectSubscription', async () => {
       'Identificador coincide: '+yesNo(result.trusted_buyer_id_matches),
       'Monto y moneda correctos: '+yesNo(result.amount_and_currency_match),
       'Orden vinculada a Turnia: '+yesNo(result.reference_matches),
+      'Suscripción pertenece al vendedor: '+yesNo(result.collector_matches_seller),
+      'Cuentas de prueba vinculadas: '+yesNo(result.test_accounts_aligned),
       'Entorno: '+environment,
       valid?'Verificación preliminar correcta. Los cobros siguen desactivados.'
         :'No continuar con pagos hasta validar las condiciones anteriores.'

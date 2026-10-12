@@ -26,7 +26,12 @@ Deno.serve(async request=>{
   ]);
   if(!sellerResponse.ok||!subResponse.ok)return answer({found:true,checked:false,reason:"Provider lookup unsuccessful"});
   const [seller,sub]=await Promise.all([sellerResponse.json(),subResponse.json()]);
-  const isSellerTest=/@testuser\.com$/i.test(String(seller.email||""));
+  const sellerMarkedTest=seller.test_user===true;
+  const sellerEmailTest=/@testuser\.com$/i.test(String(seller.email||""));
+  const isSellerTest=seller.test_user===false ? false : sellerMarkedTest || sellerEmailTest;
+  // Confirm the provider owns this subscription, not just that our token can read it.
+  const collectorMatches=String(sub.collector_id||"")===String(seller.id||"")
+    && String(seller.id||"").length>0;
   // Mercado Pago preapproval GET may return payer_id without payer_email.
   // Missing fields are unverified, never proof that the payer is not a test user.
   const returnedBuyerEmail=typeof sub.payer_email==="string" && sub.payer_email.trim().length>0;
@@ -42,7 +47,12 @@ Deno.serve(async request=>{
   const referenceMatches=sub.external_reference===target.external_reference;
   const status=String(sub.status||"unknown").slice(0,32);
   // Some provider responses omit live_mode for subscriptions: treat absent as unverified, never as false.
-  const liveMode=sub.live_mode===true?"live":sub.live_mode===false?"test":"unverified";
+  const liveMode=sub.live_mode===true?"live":sub.live_mode===false?"test":"not_reported";
+  // Pending preapprovals usually omit live_mode. Test accounts and a matched
+  // collector identify the test flow, but do not authorize a real charge.
+  const testAccountsAligned=isSellerTest && trustedBuyer && collectorMatches
+    && amountsMatch && referenceMatches && status==="pending"
+    && liveMode!=="live";
   return answer({found:true,checked:true,status,local_status:target.local_status,
     seller_is_test:isSellerTest,buyer_is_test:buyerEmailTest,
     buyer_email_returned:returnedBuyerEmail,payer_id_returned:payerIdPresent,
@@ -50,6 +60,9 @@ Deno.serve(async request=>{
     trusted_buyer_id_matches:verifiedBuyer?.matches??null,
     amount_and_currency_match:amountsMatch,reference_matches:referenceMatches,
     environment:liveMode,
-    eligible_for_payment_test:isSellerTest&&trustedBuyer&&amountsMatch&&referenceMatches&&liveMode==="test"});
+    collector_matches_seller:collectorMatches,
+    test_accounts_aligned:testAccountsAligned,
+    // This is not a payment approval: charging and membership remain disabled.
+    eligible_for_payment_test:false});
  }catch{return answer({error:"Inspection unavailable"},503)}
 });
