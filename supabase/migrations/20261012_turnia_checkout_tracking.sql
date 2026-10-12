@@ -53,6 +53,9 @@ BEGIN
  SELECT * INTO attempt FROM propina_private.turnia_checkout_attempts
  WHERE external_reference=p_reference FOR UPDATE;
  IF NOT FOUND THEN RAISE EXCEPTION 'Orden no registrada'; END IF;
+ IF attempt.status <> 'pending' OR attempt.provider_preapproval_id IS DISTINCT FROM p_subscription THEN
+  RAISE EXCEPTION 'Suscripción no coincide con la orden registrada';
+ END IF;
  IF p_live_mode IS DISTINCT FROM false OR attempt.mode<>'sandbox'
     OR p_currency <> 'CLP' OR p_amount<>attempt.price_clp
     OR p_provider_payment_id IS NULL OR length(p_provider_payment_id)<1 THEN
@@ -64,6 +67,11 @@ BEGIN
  VALUES(attempt.user_id,'mercadopago',p_provider_payment_id,p_subscription,
     p_reference,p_currency,p_amount,false,'approved')
  ON CONFLICT(provider_payment_id) DO NOTHING;
+ IF NOT EXISTS(SELECT 1 FROM propina_private.turnia_verified_payments p
+   WHERE p.provider_payment_id=p_provider_payment_id AND p.external_reference=p_reference
+     AND p.user_id=attempt.user_id) THEN
+  RAISE EXCEPTION 'Pago duplicado o referencia inconsistente';
+ END IF;
  UPDATE propina_private.turnia_checkout_attempts SET status='completed'
  WHERE id=attempt.id;
  -- Activation remains blocked until separately authorized with runtime flags.
