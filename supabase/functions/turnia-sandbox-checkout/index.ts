@@ -18,14 +18,13 @@ Deno.serve(async req => {
   const {data:{user},error:userError} = await userClient.auth.getUser();
   if (userError || !user || !user.email_confirmed_at) return reply({error:"Confirm your email first"},403);
   const admin = createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
-  const {data:registration,error:registrationError}=await admin.schema("propina_private").from("turnia_registrations")
-    .select("user_id,status,price_clp,restaurant_name").eq("user_id",user.id).maybeSingle();
-  if(registrationError || !registration || registration.status!=="pending_payment")
-    return reply({error:"Registration is not eligible for checkout"},403);
-  const {data:flags,error:flagsError}=await admin.schema("propina_private").from("turnia_runtime_flags")
-    .select("sandbox_checkout_enabled").eq("id",1).single();
-  if(flagsError || !flags?.sandbox_checkout_enabled)
-    return reply({error:"Sandbox checkout disabled"},403);
+  // A service-role-only RPC resolves the account and checks the disabled-by-default flag.
+  const reference=`turnia:${user.id}:${crypto.randomUUID()}`;
+  const {data:registration,error:registrationError}=await admin.rpc("turnia_prepare_sandbox_checkout",{
+    p_user_id:user.id,p_reference:reference
+  });
+  if(registrationError || !registration) return reply({error:"Sandbox checkout unavailable"},403);
+  if(Number(registration.price_clp)!==5000) return reply({error:"Invalid sandbox plan"},403);
   const mpToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
   if(!mpToken) return reply({error:"Sandbox seller credentials unavailable"},503);
   const sellerResponse=await fetch("https://api.mercadopago.com/users/me",
@@ -37,11 +36,6 @@ Deno.serve(async req => {
   if(!/^[^@\s]+@testuser\.com$/i.test(String(payer_email||""))
     || String(payer_email).toLowerCase()===String(seller.email).toLowerCase())
     return reply({error:"Use a separate Mercado Pago test buyer"},400);
-  const reference=`turnia:${user.id}:${crypto.randomUUID()}`;
-  const {error:saveError}=await admin.rpc("turnia_register_checkout",{
-    p_user_id:user.id,p_reference:reference,p_price:Number(registration.price_clp)
-  });
-  if(saveError) return reply({error:"Pending checkout already exists or checkout is disabled"},409);
   const response=await fetch("https://api.mercadopago.com/preapproval",{
     method:"POST",headers:{Authorization:`Bearer ${mpToken}`,"Content-Type":"application/json"},
     signal:AbortSignal.timeout(15000),
@@ -55,8 +49,10 @@ Deno.serve(async req => {
   });
   const mp=await response.json().catch(()=>({}));
   if(!response.ok || !mp.id) return reply({error:"Mercado Pago could not create test subscription"},502);
-  await admin.schema("propina_private").from("turnia_checkout_attempts")
-    .update({provider_preapproval_id:String(mp.id)}).eq("external_reference",reference);
+  const {error:attachError}=await admin.rpc("turnia_attach_sandbox_preapproval",{
+    p_reference:reference,p_preapproval_id:String(mp.id)
+  });
+  if(attachError) return reply({error:"Checkout created but could not be linked"},500);
   return reply({mode:"sandbox",status:"pending",init_point:mp.sandbox_init_point || mp.init_point});
  } catch(e) {
   console.error("turnia_sandbox_checkout_failed", e instanceof Error?e.name:"unknown");
