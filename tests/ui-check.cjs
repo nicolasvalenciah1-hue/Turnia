@@ -6,7 +6,7 @@ const html = fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
-async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}}={}) {
+async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}, dataOverrides={}}={}) {
   const dom = new JSDOM(html,{url:'https://turnia.test/',runScripts:'outside-only'}), w=dom.window, d=w.document;
   const calls=[]; let capturedBlob; const errors=[];
   w.addEventListener('error',e=>errors.push(e.error));
@@ -22,6 +22,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     propina_flex_shifts:[],propina_flex_payouts:[],
     propina_daily_distribution:[{day_id:'d1',work_date:'2026-10-01',worker_name:'=FORMULA',area_name:'Garzones',hours:8,percentage:100,calculated_clp:40000},{day_id:'d1',work_date:'2026-10-01',worker_name:'Camila',area_name:'Garzones',hours:12,percentage:100,calculated_clp:60000}]
   };
+  for(const [key,value] of Object.entries(dataOverrides)) data[key]=structuredClone(value);
   let business={}, redeemed=false;
   let authChange;
   const sb={auth:{
@@ -72,12 +73,21 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
       data.propina_shifts=data.propina_shifts.filter(s=>s.day_id!=='d2');
       data.propina_shifts.push(...args.p_workers.map(e=>({day_id:'d2',...e})));
       data.propina_daily_distribution=data.propina_daily_distribution.filter(p=>p.day_id!=='d2');
-      const weights=args.p_workers.map(e=>e.hours*(e.participation??1));const total=weights.reduce((a,b)=>a+b,0);
-      const exact=weights.map(weight=>args.p_amount*weight/total),base=exact.map(Math.floor);
-      let missing=args.p_amount-base.reduce((a,b)=>a+b,0);
-      const order=exact.map((value,i)=>({i,rem:value-Math.floor(value)})).sort((a,b)=>b.rem-a.rem||a.i-b.i);
-      for(let i=0;i<missing;i++)base[order[i].i]++;
-      data.propina_daily_distribution.push(...args.p_workers.map((e,i)=>({day_id:'d2',worker_id:e.worker_id,work_date:args.p_date,worker_name:e.worker_id==='w2'?'Camila':'=FORMULA',area_name:'Garzones',hours:e.hours,percentage:100,calculated_clp:base[i]})));
+      for(const area of data.propina_areas.filter(a=>a.percentage>0)){
+        const areaWorkers=args.p_workers.map(entry=>({...entry,worker:data.propina_workers.find(w=>w.id===entry.worker_id)})).filter(e=>e.worker?.area_id===area.id);
+        if(!areaWorkers.length)continue;
+        const budget=Math.round(args.p_amount*area.percentage/100);
+        const effective=areaWorkers.map(e=>e.hours*(e.participation??1));
+        const totalWeight=effective.reduce((sum,n)=>sum+n,0);
+        const exact=effective.map(weight=>budget*weight/totalWeight),bases=exact.map(Math.floor);
+        const missing=budget-bases.reduce((sum,n)=>sum+n,0);
+        const order=exact.map((value,i)=>({i,rem:value-Math.floor(value),id:areaWorkers[i].worker_id})).sort((a,b)=>b.rem-a.rem||a.id.localeCompare(b.id));
+        for(let i=0;i<missing;i++)bases[order[i].i]++;
+        data.propina_daily_distribution.push(...areaWorkers.map((e,i)=>({
+          day_id:'d2',worker_id:e.worker_id,work_date:args.p_date,worker_name:e.worker.name,
+          area_id:area.id,area_name:area.name,hours:e.hours,percentage:area.percentage,calculated_clp:bases[i]
+        })));
+      }
     }
     return {data:{}};
   },from:name=>({select:()=>({eq:async(k,id)=>{calls.push(['query',name,id]);return {data:id==='r1'?structuredClone(data[name]):[]};}})})};
@@ -94,10 +104,11 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=classic-shares-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=classic-shares-20261012-1'),'App asset is versioned');
+  assert(html.includes('styles.css?v=double-points-20261012-1'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=double-points-20261012-1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
+  assert(css.includes('.classic-area-preview'),'Independent area quota preview is styled');
   assert(sw.includes('turnia-shell-v9'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
    assert.equal(a.d.querySelector('#avatar').textContent,'M','Platform owner displays Mutavia monogram');
