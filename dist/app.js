@@ -138,7 +138,7 @@ function updatePermissions() {
   $('restaurantEditHelp').textContent = restaurantOwner
     ? 'Puedes actualizar el nombre de este local sin modificar las jornadas ni las propinas.'
     : 'Solo el propietario de este restaurante puede cambiar su nombre.';
-  document.querySelectorAll('[data-present],[data-hours],[data-pct],[data-update-area],[data-toggle-worker]').forEach(el => el.disabled = !editing);
+  document.querySelectorAll('[data-present],[data-hours],[data-day-percent],[data-day-note],[data-day-agreed],[data-pct],[data-update-area],[data-toggle-worker]').forEach(el => el.disabled = !editing);
   busyButtons.forEach(button => { button.disabled = true; });
 }
 function renderAccountSettings() {
@@ -450,8 +450,10 @@ function renderDay() {
   $('dayState').textContent = current ? 'Jornada guardada' : flexShifts.some(s=>s.work_date===$('date').value) ? 'Fecha usada en AM/PM' : 'Nueva jornada';
   $('attendance').innerHTML = workers.filter(w => w.active || current && shifts.some(s => s.day_id === current.id && s.worker_id === w.id)).map(w => {
     const shift = current ? shifts.find(s => s.day_id === current.id && s.worker_id === w.id) : null;
-    return `<tr><td><input type="checkbox" aria-label="${safe(w.name)} trabajó" data-present="${safe(w.id)}" ${shift ? 'checked' : ''}></td><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><input aria-label="Horas de ${safe(w.name)}" type="number" data-hours="${safe(w.id)}" min="0.5" max="24" step="0.5" value="${Number(shift?.hours || $('shiftHours').value || 8)}"></td></tr>`;
-  }).join('') || emptyRow(4,'Agrega trabajadores en Equipo y áreas para registrar una jornada.');
+    const participation = Number((Number(shift?.participation ?? 1) * 100).toFixed(2));
+    const note = shift?.note || '', agreed = !!shift?.agreed;
+    return `<tr><td><input type="checkbox" aria-label="${safe(w.name)} trabajó" data-present="${safe(w.id)}" ${shift ? 'checked' : ''}></td><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><input aria-label="Horas de ${safe(w.name)}" type="number" data-hours="${safe(w.id)}" min="0.5" max="24" step="0.5" value="${Number(shift?.hours || $('shiftHours').value || 8)}"></td><td><input aria-label="Participación porcentual de ${safe(w.name)}" type="number" data-day-percent="${safe(w.id)}" min="1" max="200" step="0.01" value="${participation}"></td><td><div class="classic-participation-agreement"><input aria-label="Motivo del acuerdo para ${safe(w.name)}" data-day-note="${safe(w.id)}" maxlength="300" placeholder="Motivo para menos de 100%" value="${safe(note)}"><label class="check"><input type="checkbox" data-day-agreed="${safe(w.id)}" ${agreed ? 'checked' : ''}>Acuerdo confirmado</label></div></td></tr>`;
+  }).join('') || emptyRow(6,'Agrega trabajadores en Equipo y áreas para registrar una jornada.');
   renderAttendanceCount(); updatePermissions();
 }
 function renderAttendanceCount() {
@@ -464,7 +466,11 @@ function renderPayouts() {
   const data = day ? payouts.filter(p => p.day_id === day.id) : [];
   const assigned = data.reduce((n,p) => n + Number(p.calculated_clp), 0);
   $('summary').innerHTML = day ? `<div><small>Total de la jornada</small><strong>${clp(day.amount_clp)}</strong></div><div><small>Distribuido</small><strong>${clp(assigned)}</strong></div><div><small>Sin asignar</small><strong>${clp(Number(day.amount_clp)-assigned)}</strong></div>` : '<p class="muted" style="margin:0">Todavía no hay una jornada guardada para esta fecha.</p>';
-  $('payouts').innerHTML = data.map(p => `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td>${Number(p.hours)}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(4,'Registra una jornada o selecciona otra fecha para ver su reparto.');
+  $('payouts').innerHTML = data.map(p => {
+    const shift = shifts.find(s => s.day_id === p.day_id && s.worker_id === p.worker_id);
+    const percentage = Number((Number(shift?.participation ?? 1) * 100).toFixed(2));
+    return `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td>${Number(p.hours)}</td><td>${percentage}%</td><td class="money">${clp(p.calculated_clp)}</td></tr>`;
+  }).join('') || emptyRow(5,'Registra una jornada o selecciona otra fecha para ver su reparto.');
   $('editDay').disabled = !day;
 }
 function visibleHistory() {
@@ -649,7 +655,7 @@ function renderMyTips() {
   const rows = invalid ? [] : myTips.filter(p => (!from || p.work_date >= from) && (!to || p.work_date <= to));
   $('myTipsTotal').textContent = myTipsLoaded ? clp(rows.reduce((n,p) => n + Number(p.calculated_clp),0)) : '—';
   $('myTipsDays').textContent = myTipsLoaded ? new Set(rows.map(p=>p.work_date)).size : '—';
-  $('myTipsRows').innerHTML = rows.map(p => `<tr><td>${safe(dateLabel(p.work_date))}</td><td>${p.kind==='flex' ? safe(p.group_code==='DIA'?'Fondo diario':p.group_code)+' · '+Number(p.weight)+' parte(s)' : safe(p.hours)+' h'}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(3,invalid ? 'La fecha Desde debe ser anterior o igual a Hasta.' : myTipsLoaded ? 'No hay jornadas asignadas a tu ficha en este período.' : 'Pulsa Actualizar para consultar tus propinas.');
+  $('myTipsRows').innerHTML = rows.map(p => `<tr><td>${safe(dateLabel(p.work_date))}</td><td>${p.kind==='flex' ? safe(p.group_code==='DIA'?'Fondo diario':p.group_code)+' · '+Number(p.weight)+' parte(s)' : safe(p.hours)+' h'+(p.weight==null?'':' · '+Number((Number(p.weight)*100).toFixed(2))+'%')}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(3,invalid ? 'La fecha Desde debe ser anterior o igual a Hasta.' : myTipsLoaded ? 'No hay jornadas asignadas a tu ficha en este período.' : 'Pulsa Actualizar para consultar tus propinas.');
 }
 $('myTipsFrom').onchange = renderMyTips; $('myTipsTo').onchange = renderMyTips;
 $('clearMyTips').onclick = () => { $('myTipsFrom').value = ''; $('myTipsTo').value = ''; renderMyTips(); };
@@ -1070,8 +1076,16 @@ bind('saveDay', async () => {
   if (Math.abs(areas.reduce((n,a) => n + Number(a.percentage),0) - 100) > .0001) throw Error('Los porcentajes de las áreas deben sumar exactamente 100%.');
   const date = $('date').value, amount = Number($('amount').value), hours_per_shift = Number($('shiftHours').value);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || $('amount').value === '' || !Number.isSafeInteger(amount) || amount < 0 || !Number.isFinite(hours_per_shift) || hours_per_shift <= 0 || hours_per_shift > 24) throw Error('Revisa la fecha, el monto en pesos completos y las horas del turno.');
-  const present = [...document.querySelectorAll('[data-present]:checked')].map(el => ({worker_id:el.dataset.present,hours:Number(document.querySelector(`[data-hours="${el.dataset.present}"]`).value)}));
+  const present = [...document.querySelectorAll('[data-present]:checked')].map(el => {
+    const wid = el.dataset.present;
+    const pct = document.querySelector(`[data-day-percent="${wid}"]`).value;
+    return {worker_id:wid,hours:Number(document.querySelector(`[data-hours="${wid}"]`).value),
+      participation:pct === '' ? null : Number((Number(pct) / 100).toFixed(4)),
+      note:document.querySelector(`[data-day-note="${wid}"]`).value.trim(),agreed:document.querySelector(`[data-day-agreed="${wid}"]`).checked};
+  });
   if (!present.length || present.some(x => !Number.isFinite(x.hours) || x.hours <= 0 || x.hours > 24)) throw Error('Selecciona personal e ingresa horas válidas, entre 0,5 y 24.');
+  if (present.some(x => x.participation === null || !Number.isFinite(x.participation) || x.participation < 0.01 || x.participation > 2)) throw Error('La participación de cada persona debe estar entre 1% y 200%.');
+  if (present.some(x => x.note.length > 300 || x.participation !== 1 && (!x.agreed || x.note.length < 10))) throw Error('Una participación distinta de 100% requiere acuerdo confirmado y un motivo de al menos 10 caracteres.');
   const presentAreas = new Set(present.map(x => workers.find(w => w.id === x.worker_id)?.area_id));
   if (areas.some(a => Number(a.percentage) > 0 && !presentAreas.has(a.id))) throw Error('Cada área con porcentaje positivo necesita al menos una persona presente.');
   if (flexShifts.some(s => s.work_date === date)) throw Error('El ' + dateLabel(date) + ' ya tiene propinas AM/PM. Abre esa modalidad para revisar el reparto y evita duplicar los montos.');
@@ -1102,11 +1116,14 @@ function csvCell(value) {
 bind('export', async () => {
   const visible = visibleHistory(), ids = new Set(visible.filter(x=>x.day).map(x=>x.day.id));
   const flexDates = new Set(visible.filter(x=>x.flexShifts.length).map(x=>x.date));
-  const classic = payouts.filter(p => ids.has(p.day_id)).map(p => [p.work_date,currentRestaurant()?.name || '','Jornada completa',p.worker_name,p.area_name,p.hours,p.percentage,p.calculated_clp]);
-  const flexible = flexPayouts.filter(p => flexDates.has(p.work_date)).map(p => [p.work_date,currentRestaurant()?.name || '',p.group_code==='DIA'?'Fondo diario':'Turno '+p.group_code,p.worker_name,p.area_name,p.weight,'',p.calculated_clp]);
+  const classic = payouts.filter(p => ids.has(p.day_id)).map(p => {
+    const shift = shifts.find(s => s.day_id === p.day_id && s.worker_id === p.worker_id);
+    return [p.work_date,currentRestaurant()?.name || '','Jornada completa',p.worker_name,p.area_name,p.hours,p.percentage,Number((Number(shift?.participation ?? 1)*100).toFixed(2)),p.calculated_clp];
+  });
+  const flexible = flexPayouts.filter(p => flexDates.has(p.work_date)).map(p => [p.work_date,currentRestaurant()?.name || '',p.group_code==='DIA'?'Fondo diario':'Turno '+p.group_code,p.worker_name,p.area_name,p.weight,'',Number((Number(p.weight)*100).toFixed(2)),p.calculated_clp]);
   const data = [...classic,...flexible].sort((a,b)=>a[0].localeCompare(b[0]));
   if (!data.length) throw Error('No hay repartos para exportar en este período.');
-  const rows = [['Fecha','Restaurante','Modalidad','Trabajador','Área','Horas/Partes','Porcentaje área','Propina CLP'],...data];
+  const rows = [['Fecha','Restaurante','Modalidad','Trabajador','Área','Horas/Partes','Porcentaje área','Participación individual (%)','Propina CLP'],...data];
   const csv = '\ufeff' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})), link = document.createElement('a');
   link.href = url; link.download = `turnia_propinas_${today()}.csv`; document.body.append(link); link.click(); link.remove();
