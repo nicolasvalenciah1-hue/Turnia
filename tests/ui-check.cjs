@@ -18,7 +18,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     propina_areas:[{id:'a1',name:'Garzones',percentage:100}],
     propina_workers:[{id:'w1',name:'=FORMULA',area_id:'a1',active:true},{id:'w2',name:'Camila',area_id:'a1',active:true}],
     propina_days:[{id:'d1',work_date:'2026-10-01',amount_clp:100000,hours_per_shift:8}],
-    propina_shifts:[{day_id:'d1',worker_id:'w1',hours:8},{day_id:'d1',worker_id:'w2',hours:12}],
+    propina_shifts:[{day_id:'d1',worker_id:'w1',hours:8,participation:1,note:'',agreed:false},{day_id:'d1',worker_id:'w2',hours:12,participation:1,note:'',agreed:false}],
     propina_flex_shifts:[],propina_flex_payouts:[],
     propina_daily_distribution:[{day_id:'d1',work_date:'2026-10-01',worker_name:'=FORMULA',area_name:'Garzones',hours:8,percentage:100,calculated_clp:40000},{day_id:'d1',work_date:'2026-10-01',worker_name:'Camila',area_name:'Garzones',hours:12,percentage:100,calculated_clp:60000}]
   };
@@ -67,8 +67,17 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
       return {data:'flex1'};
     }
     if(name==='propina_save_day'){
+      data.propina_days=data.propina_days.filter(d=>d.work_date!==args.p_date);
       data.propina_days.push({id:'d2',work_date:args.p_date,amount_clp:args.p_amount,hours_per_shift:args.p_shift_hours});
-      data.propina_daily_distribution.push({day_id:'d2',work_date:args.p_date,worker_name:'Camila',area_name:'Garzones',hours:8,percentage:100,calculated_clp:args.p_amount});
+      data.propina_shifts=data.propina_shifts.filter(s=>s.day_id!=='d2');
+      data.propina_shifts.push(...args.p_workers.map(e=>({day_id:'d2',...e})));
+      data.propina_daily_distribution=data.propina_daily_distribution.filter(p=>p.day_id!=='d2');
+      const weights=args.p_workers.map(e=>e.hours*(e.participation??1));const total=weights.reduce((a,b)=>a+b,0);
+      const exact=weights.map(weight=>args.p_amount*weight/total),base=exact.map(Math.floor);
+      let missing=args.p_amount-base.reduce((a,b)=>a+b,0);
+      const order=exact.map((value,i)=>({i,rem:value-Math.floor(value)})).sort((a,b)=>b.rem-a.rem||a.i-b.i);
+      for(let i=0;i<missing;i++)base[order[i].i]++;
+      data.propina_daily_distribution.push(...args.p_workers.map((e,i)=>({day_id:'d2',worker_id:e.worker_id,work_date:args.p_date,worker_name:e.worker_id==='w2'?'Camila':'=FORMULA',area_name:'Garzones',hours:e.hours,percentage:100,calculated_clp:base[i]})));
     }
     return {data:{}};
   },from:name=>({select:()=>({eq:async(k,id)=>{calls.push(['query',name,id]);return {data:id==='r1'?structuredClone(data[name]):[]};}})})};
@@ -85,9 +94,10 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=support-center-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=individual-shares-20261012-1'),'App asset is versioned');
+  assert(html.includes('styles.css?v=classic-shares-20261012-1'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=classic-shares-20261012-1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
+  assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(sw.includes('turnia-shell-v9'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
    assert.equal(a.d.querySelector('#avatar').textContent,'M','Platform owner displays Mutavia monogram');
@@ -139,7 +149,7 @@ if (require.main === module) (async()=>{
   a.d.querySelector('#amount').value='120000'; a.d.querySelector('[data-present="w2"]').checked=true;
   a.d.querySelector('#saveDay').click(); await flush();
   const save=a.calls.find(c=>c[0]==='propina_save_day'); assert(save,'Atomic day RPC');
-  assert.equal(save[1].p_amount,120000);assert.deepEqual(JSON.parse(JSON.stringify(save[1].p_workers)),[{worker_id:'w2',hours:8}]);
+  assert.equal(save[1].p_amount,120000);assert.deepEqual(JSON.parse(JSON.stringify(save[1].p_workers)),[{worker_id:'w2',hours:8,participation:1,note:'',agreed:false}]);
   assert(!a.d.querySelector('#distribution').classList.contains('hide'),'Saved day opens distribution');
   assert.match(a.d.querySelector('#daySaveStatus').textContent,/guardada correctamente/i,'Save must be confirmed next to the form');
   assert(a.d.querySelector('#historyRows').textContent.includes('Jornada completa'),'Classic day appears in unified history');
@@ -159,8 +169,52 @@ if (require.main === module) (async()=>{
   assert(side.d.querySelector('#app').classList.contains('hide'),'Sidebar logout still works');
   assert(!side.d.querySelector('#auth').classList.contains('hide'));
   side.dom.window.close();
+  // Jornada completa: 25% de participación AM equivalent, then update to 75% for the same date.
+  const classic=await app({platform:false,role:'owner'});
+  classic.d.querySelector('[data-tab="daily"]').click();
+  classic.d.querySelector('#date').value='2026-10-10';
+  classic.d.querySelector('#date').dispatchEvent(new classic.w.Event('change'));
+  classic.d.querySelector('#amount').value='65000';
+  classic.d.querySelector('[data-present="w1"]').checked=true;
+  classic.d.querySelector('[data-present="w2"]').checked=true;
+  assert.equal(classic.d.querySelector('[data-day-percent="w2"]').value,'100','Default participation is 100%');
+  classic.d.querySelector('[data-day-percent="w2"]').value='25';
+  classic.d.querySelector('#saveDay').click();await flush();
+  assert(!classic.calls.some(x=>x[0]==='propina_save_day'),'25% without agreement cannot be saved');
+  assert.match(classic.d.querySelector('#daySaveStatus').textContent,/acuerdo/i);
+  classic.d.querySelector('[data-day-note="w2"]').value='Trabajadora en período de aprendizaje';
+  classic.d.querySelector('[data-day-agreed="w2"]').checked=true;
+  classic.d.querySelector('#saveDay').click();await flush();
+  const firstClassic=classic.calls.filter(x=>x[0]==='propina_save_day');
+  assert.equal(firstClassic.length,1,'Special share saved once after validation');
+  assert.equal(firstClassic[0][1].p_workers[1].participation,0.25);
+  assert.equal(firstClassic[0][1].p_workers[0].participation,1);
+  assert(classic.d.querySelector('#summary').textContent.includes('65.000'));
+  assert(classic.d.querySelector('#payouts').textContent.includes('25%'),'Classic payout includes individual percentage');
+  assert.equal(classic.d.querySelector('#payouts').querySelectorAll('tr').length,2);
+  assert.equal(classic.d.querySelector('#payouts').textContent.includes('Sin asignar'),false);
+  classic.d.querySelector('#editDay').click();
+  assert.equal(classic.d.querySelector('[data-day-percent="w2"]').value,'25','Edit loads saved individual percentage');
+  assert.equal(classic.d.querySelector('[data-day-note="w2"]').value,'Trabajadora en período de aprendizaje','Edit restores reason');
+  assert(classic.d.querySelector('[data-day-agreed="w2"]').checked,'Edit restores agreement');
+  classic.d.querySelector('[data-day-percent="w2"]').value='75';
+  classic.d.querySelector('[data-day-note="w2"]').value='Avance de aprendizaje aprobado por equipo';
+  classic.d.querySelector('#saveDay').click();await flush();
+  const savedClassic=classic.calls.filter(x=>x[0]==='propina_save_day');
+  assert.equal(savedClassic.length,2,'Editing existing classic day updates record');
+  assert.equal(savedClassic[1][1].p_workers[1].participation,0.75);
+  assert.equal(savedClassic[1][1].p_workers[0].participation,1);
+  assert(classic.d.querySelector('#payouts').textContent.includes('75%'),'Updated payout shows 75%');
+  classic.d.querySelector('#export').click();await flush();
+  const csvClassic=await new Promise(r=>{const reader=new classic.w.FileReader();reader.onload=()=>r(reader.result);reader.readAsText(classic.blob());});
+  assert(csvClassic.includes('Participación individual (%)'));
+  assert(csvClassic.includes('"75"'),'CSV preserves the individual percentage');
+  assert.equal(classic.errors.length,0);
+  classic.dom.window.close();
   const b=await app({platform:false,role:'viewer'});
   assert(b.d.querySelector('#saveDay').disabled,'Viewer cannot save');
+  assert(b.d.querySelector('[data-day-percent="w2"]').disabled,'Viewer cannot edit individual share');
+  assert(b.d.querySelector('[data-day-agreed="w2"]').disabled,'Viewer cannot attest an agreement');
   assert(b.d.querySelector('#saveFlexShift').disabled,'Viewer cannot save AM/PM shifts');
   assert(b.d.querySelector('#saveRestaurantDetails').disabled,'Viewer cannot rename restaurant');
   assert(b.d.querySelector('#restaurantEditName').disabled,'Viewer cannot edit restaurant field');

@@ -57,6 +57,15 @@
 .flex-person-config>.check{margin:0 0 7px;font-size:12px}
 @media(max-width:850px){.flex-area-row{display:block}.flex-area-row label{margin-top:10px}.flex-person-config{grid-template-columns:1fr}}
 
+/* Participación individual de jornada completa: lectura clara incluso en pantallas estrechas. */
+#attendance [data-day-percent]{width:100%;min-width:98px}
+#attendance [data-hours]{width:100%;min-width:86px}
+#attendance td:nth-child(6){min-width:235px}
+.classic-participation-agreement{display:grid;gap:8px;min-width:210px}
+.classic-participation-agreement [data-day-note]{width:100%;min-width:195px}
+.classic-participation-agreement>.check{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;font-weight:500;white-space:nowrap}
+.classic-participation-agreement>.check input{width:16px;min-width:16px}
+
 /* Cliente nuevo: creación guiada de restaurante */
 .restaurant-setup{max-width:940px;margin:36px auto;padding:30px}
 .restaurant-setup>.grid{margin-bottom:18px}
