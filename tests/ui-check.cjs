@@ -86,7 +86,7 @@ if (require.main === module) (async()=>{
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=support-center-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=guided-onboarding-20261012-1'),'App asset is versioned');
+  assert(html.includes('app.js?v=individual-shares-20261012-1'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(sw.includes('turnia-shell-v9'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
@@ -214,7 +214,7 @@ if (require.main === module) (async()=>{
   flex.d.querySelector('[data-flex-mode="a1"]').value='daily_unique';
   const present=flex.d.querySelector('[data-flex-present="w2"]');
   present.checked=true;
-  flex.d.querySelector('[data-flex-weight="w2"]').value='0.25';
+  flex.d.querySelector('[data-flex-percent="w2"]').value='25';
   flex.d.querySelector('#saveFlexShift').click();await flush();
   assert(!flex.calls.some(x=>x[0]==='propina_save_flex_shift'),'Special share without agreement must be blocked');
   assert.match(flex.d.querySelector('#message').textContent,/acuerdo/i);
@@ -227,15 +227,25 @@ if (require.main === module) (async()=>{
   assert.equal(flexSave[1].p_amount,1001);
   assert.deepEqual(JSON.parse(JSON.stringify(flexSave[1].p_modes)),[{area_id:'a1',mode:'daily_unique'}]);
   assert.equal(flexSave[1].p_entries[0].weight,0.25);
+  assert.match(flex.d.querySelector('#flexPayoutRows').textContent,/25%/,'Results display percent rather than decimal weight');
   assert(flexSave[1].p_entries[0].agreed);
   assert.equal(flex.d.querySelector('#flexPayoutRows').children.length,1,'Flexible payout loads after save');
   assert(flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]'),'Flexible shift appears in unified history');
-  assert.equal(flex.d.querySelectorAll('#historyRows [data-open-flex-date="2026-10-09"]').length,1,'One flex row per day');
+  // A trainee can change from 25% to 75% on the next shift, without changing the area percentage.
   flex.d.querySelector('#flexShiftCode').value='PM';
   flex.d.querySelector('#flexShiftCode').dispatchEvent(new flex.w.Event('change'));
   flex.d.querySelector('#flexAmount').value='999';
   flex.d.querySelector('[data-flex-present="w2"]').checked=true;
+  flex.d.querySelector('[data-flex-percent="w2"]').value='75';
+  flex.d.querySelector('[data-flex-note="w2"]').value='Aprendizaje avanzado acordado para turno PM';
+  flex.d.querySelector('[data-flex-agreed="w2"]').checked=true;
   flex.d.querySelector('#saveFlexShift').click(); await flush();
+  const flexSaves=flex.calls.filter(x=>x[0]==='propina_save_flex_shift');
+  assert.equal(flexSaves.length,2);
+  assert.equal(flexSaves[1][1].p_entries[0].weight,0.75,'PM stores 75% independently from AM 25%');
+  assert.equal(flexSaves[0][1].p_entries[0].weight,0.25,'AM 25% remains unchanged');
+  assert.equal(flexSaves[1][1].p_modes[0].area_id,'a1','Area rule remains unchanged');
+  assert.equal(flex.d.querySelectorAll('#historyRows [data-open-flex-date="2026-10-09"]').length,1,'One flex row per day');
   const row=flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]').closest('tr');
   assert.equal(flex.d.querySelectorAll('#historyRows [data-open-flex-date="2026-10-09"]').length,1,'Two shifts stay one history row');
   assert.match(row.textContent,/Por turnos/,'History labels the distribution method, not individual shifts');
