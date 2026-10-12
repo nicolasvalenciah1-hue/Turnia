@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1">
+ <meta name="theme-color" content="#14283f">
+ <meta name="robots" content="noindex,nofollow">
+ <title>Comprobar vendedor de prueba · Turnia</title>
+ <link rel="icon" href="icon.svg" type="image/svg+xml">
+ <style>
+  :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#14283f;background:#f6f7f4}
+  *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
+  main{width:min(100%,650px);background:#fff;border:1px solid #dce4e5;border-radius:22px;padding:clamp(24px,5vw,48px);box-shadow:0 20px 55px #14283f0a}
+  img{width:58px;height:58px;margin-bottom:18px}
+  .kicker{text-transform:uppercase;letter-spacing:.18em;color:#087f8c;font-size:12px;font-weight:800}
+  h1{font-size:clamp(28px,4vw,38px);line-height:1.16;margin:16px 0}
+  p{font-size:15px;line-height:1.7;color:#637386}
+  .notice{padding:17px 19px;border:1px solid #c8dce3;border-radius:15px;background:#edf5f7;color:#26596b;margin:21px 0;line-height:1.6}
+  button{display:block;width:100%;background:#087f8c;color:#fff;border:0;border-radius:12px;font-weight:750;font-size:15px;padding:16px 12px;cursor:pointer}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  a{display:inline-block;margin-top:22px;color:#087f8c;font-weight:700;text-decoration:none}
+  .hint{font-size:12px}
+ </style>
+</head>
+<body>
+ <main>
+  <img src="icon.svg" alt="Turnia">
+  <span class="kicker">Diagnóstico seguro · Mercado Pago</span>
+  <h1>Comprobar vendedor de prueba</h1>
+  <p>Esta comprobación solo consulta si Turnia tiene configurado un vendedor de prueba de Mercado Pago. <strong>No genera pagos, cargos ni suscripciones.</strong></p>
+  <p id="accountStatus">Revisando tu sesión de Turnia…</p>
+  <div class="notice" id="result" role="status" aria-live="polite">Para comenzar, inicia sesión en Turnia con tu restaurante de prueba.</div>
+  <button type="button" id="verify" disabled>Comprobar cuenta vendedora</button>
+  <a href="./?v=preflight-direct-v1">← Volver a Turnia</a>
+  <p class="hint">Los pagos reales, el checkout sandbox y la activación siguen desactivados. No compartas contraseñas ni tokens.</p>
+ </main>
+ <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script>
+ <script src="comprobar-vendedor.js?v=1"></script>
+</body>
+</html>
