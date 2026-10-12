@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const sql=fs.readFileSync('supabase/migrations/20261012_turnia_deferred_payment_activation.sql','utf8');
+const fn=fs.readFileSync('supabase/functions/turnia-sandbox-webhook/index.ts','utf8');
+assert(sql.includes("COALESCE(flags.automatic_activation_enabled,false)"));
+assert(sql.includes("COALESCE(flags.allow_sandbox_activations,false)"));
+assert(sql.includes("'verified_pending_activation'"));
+assert(sql.includes("attempt.provider_preapproval_id IS DISTINCT FROM p_subscription"));
+assert(sql.includes("provider_subscription_id=p_subscription"));
+assert(sql.includes("IF attempt.status='completed'"));
+assert(fn.includes('authenticatedNotification'));
+assert(fn.includes('payment.live_mode!==false'));
+console.log('PASS: deferred activation, retry verification and sandbox safeguards (static only; not an end-to-end payment test)');
