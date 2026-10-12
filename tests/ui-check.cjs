@@ -6,13 +6,13 @@ const html = fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
-async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, initialPassword='OldPassword123', rpcOverrides={}, authOverrides={}}={}) {
+async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}}={}) {
   const dom = new JSDOM(html,{url:'https://turnia.test/',runScripts:'outside-only'}), w=dom.window, d=w.document;
   const calls=[]; let capturedBlob; const errors=[];
   w.addEventListener('error',e=>errors.push(e.error));
   const user={id:'test-user',email:'owner@example.test',user_metadata:registered?{turnia_registration:'v1'}:{}};
   let session=loggedIn?{user}:null, storedPassword=initialPassword;
-  const context={display_name:'Nicolás Valencia',platform_admin:platform,can_create:platform||!restaurant,restaurants:restaurant?[{id:'r1',name:'Local uno',role},{id:'r2',name:'Local dos',role}]:[]};
+  const context={display_name:'Nicolás Valencia',platform_admin:platform,can_create:platform||!restaurant,restaurants:restaurant?[{id:'r1',name:'Local uno',role,...restaurantContext},{id:'r2',name:'Local dos',role}]:[]};
   if(completed)w.localStorage.setItem('turnia_guide_v1_test-user',JSON.stringify({done:true,step:9}));
   const data={
     propina_areas:[{id:'a1',name:'Garzones',percentage:100}],
@@ -56,10 +56,10 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=account-admin-20261012-2'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=account-admin-20261012-2'),'App asset is versioned');
+  assert(html.includes('styles.css?v=worker-links-20261012-2'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=worker-links-20261012-2'),'App asset is versioned');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
-  assert(sw.includes('turnia-shell-v4'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v5'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
   // Personal settings can be used by every logged-in user.
   a.d.querySelector('[data-tab="access"]').click();

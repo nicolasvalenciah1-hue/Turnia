@@ -20,6 +20,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, 'sb_publishable_uT_FeTqwfX
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: sessionStorageBackend }
 });
 let context = null, user = null, rid = '', areas = [], workers = [], days = [], shifts = [], payouts = [];
+let myTips = [], myTipsLoaded = false;
 let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = false;
 let guideIndex = 0, guideDone = false;
 let authVersion = 0, teamVersion = 0, platformVersion = 0;
@@ -36,9 +37,11 @@ const query = async (table, restaurantId) => check(await sb.from(table).select('
 const currentRestaurant = () => context?.restaurants?.find(r => r.id === rid);
 const canEdit = () => !!rid && !!context && (context.platform_admin || ['owner','admin'].includes(currentRestaurant()?.role));
 const canInvite = () => !!rid && !!context && (context.platform_admin || currentRestaurant()?.role === 'owner');
+const personalOnly = () => currentRestaurant()?.read_scope === 'personal' && currentRestaurant()?.role === 'viewer' && !context?.platform_admin;
+const hasWorkerLink = () => !!currentRestaurant()?.worker_id;
 const canManageTeam = () => !!rid && currentRestaurant()?.role === 'owner';
 const roleLabel = role => ({owner:'Propietario del local',admin:'Administrador del local',viewer:'Solo consulta'}[role] || 'Cliente');
-const titles = {home:'Inicio',daily:'Registrar día',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',guide:'Guía de uso'};
+const titles = {mytips:'Mis propinas',home:'Inicio',daily:'Registrar día',distribution:'Reparto',history:'Historial',staff:'Equipo y áreas',access:'Accesos y ajustes',owner:'Panel de propietario',guide:'Guía de uso'};
 function msg(text = '', tone = 'info') {
   const target = recoveryMode ? $('recoveryMessage') : context ? $('message') : $('authMessage');
   target.textContent = text;
@@ -77,6 +80,8 @@ function closeDrawer(restoreFocus = false) {
 }
 function setTab(name) {
   if (!titles[name] || name === 'owner' && !context?.platform_admin) return;
+  if (personalOnly() && !['mytips','access'].includes(name)) name = 'mytips';
+  if (name === 'mytips' && !hasWorkerLink()) name = 'access';
   tab = name;
   document.querySelectorAll('.tab').forEach(el => el.classList.toggle('hide', el.id !== name));
   document.querySelectorAll('[data-tab]').forEach(el => {
@@ -98,6 +103,15 @@ function updatePermissions() {
   $('createRestaurantPanel').classList.toggle('hide', !context?.can_create);
   $('staffInvitePanel').classList.toggle('hide', !canInvite());
   $('teamAccessPanel').classList.toggle('hide', !canManageTeam());
+  $('workerLinkPanel').classList.toggle('hide', !canManageTeam());
+  $('myTipsNav').classList.toggle('hide', !hasWorkerLink());
+  $('viewGlobalTips').classList.toggle('hide', !rid || personalOnly());
+  $('membershipCard').classList.toggle('hide', personalOnly());
+  ['home','daily','distribution','history','staff','guide'].forEach(name => {
+    document.querySelector(`[data-tab="${name}"]`).classList.toggle('hide', personalOnly());
+  });
+  document.querySelector('.side-help').classList.toggle('hide', personalOnly());
+  if (personalOnly()) $('onboardingBanner').classList.add('hide');
   $('ownerNav').classList.toggle('hide', !context?.platform_admin);
   $('adminPanel').classList.toggle('hide', !context?.platform_admin);
   const restaurantOwner = !!rid && currentRestaurant()?.role === 'owner';
@@ -125,12 +139,15 @@ function setSettingsStatus(text, kind = 'success') {
   target.className = 'notice '+kind;
 }
 function resetData() {
-  areas = []; workers = []; days = []; shifts = []; payouts = []; membershipContext = [];
+  areas = []; workers = []; days = []; shifts = []; payouts = []; membershipContext = []; myTips = []; myTipsLoaded = false;
+  resetWorkerForm();
+  $('myTipsFrom').value = ''; $('myTipsTo').value = '';
+  $('myTipsStatus').textContent = '';
   $('inviteResult').textContent = ''; $('staffInviteResult').textContent = '';
   $('historyFrom').value = ''; $('historyTo').value = '';
   render(); renderMembershipCard(null);
   teamVersion++; teamMembers = []; teamInvitations = [];
-  $('teamMembers').innerHTML = ''; $('teamInvitations').innerHTML = ''; $('teamStatus').textContent = '';
+  $('teamMembers').innerHTML = ''; $('teamInvitations').innerHTML = ''; $('teamStatus').textContent = ''; renderWorkerOptions();
 }
 async function init() {
   const version = ++authVersion;
@@ -198,13 +215,21 @@ async function init() {
     setTab('access');
     msg(context.can_create ? 'Tu acceso está aprobado. Crea tu restaurante para comenzar.' : 'Activa tu código de invitación para entrar al restaurante autorizado.');
   }
-  if (!guideDone && !context.platform_admin && (rid || context.can_create)) setTab('guide');
+  if (personalOnly()) setTab(tab === 'access' ? 'access' : 'mytips');
+  else if (tab === 'mytips' && !hasWorkerLink()) setTab('home');
+  else if (!guideDone && !context.platform_admin && (rid || context.can_create)) setTab('guide');
 }
 async function load() {
   if (!rid) { resetData(); return; }
   const version = ++loadVersion, selectedId = rid;
   loadingData = true; updatePermissions();
+  myTips = []; myTipsLoaded = false; renderMyTips();
+  if (personalOnly()) { areas = []; workers = []; days = []; shifts = []; payouts = []; membershipContext = []; render(); }
   try {
+    if (personalOnly()) {
+      await loadMyTips(version, selectedId);
+      return;
+    }
     const data = await Promise.all(['propina_areas','propina_workers','propina_days','propina_shifts','propina_daily_distribution'].map(t => query(t, selectedId)));
     if (version !== loadVersion || selectedId !== rid) return;
     [areas,workers,days,shifts,payouts] = data;
@@ -213,10 +238,11 @@ async function load() {
     days.sort((a,b) => b.work_date.localeCompare(a.work_date));
     render();
     await loadMembershipContext(version, selectedId);
+    if (hasWorkerLink()) await loadMyTips(version, selectedId);
   } finally { if (version === loadVersion) { loadingData = false; updatePermissions(); } }
 }
 function render() {
-  renderStaff(); renderDay(); renderHistory(); renderPayouts(); renderHome(); updatePermissions();
+  renderMyTips(); renderStaff(); renderWorkerOptions(); renderDay(); renderHistory(); renderPayouts(); renderHome(); updatePermissions();
 }
 function renderStaff() {
   const total = areas.reduce((n,a) => n + Number(a.percentage), 0), correct = Math.abs(total-100) < .0001;
@@ -296,7 +322,7 @@ function invitationState(item) {
 function invitationRows(items, platform = false) {
   return items.map((item, index) => {
     const state = invitationState(item);
-    const role = item.role === 'restaurant_owner' ? 'Crear restaurante' : roleLabel(item.role);
+    const role = item.worker_id ? (item.read_scope === 'personal' ? 'Solo sus propinas' : 'Propinas y todo el local') : item.role === 'restaurant_owner' ? 'Crear restaurante' : roleLabel(item.role);
     return `<tr><td>${safe(item.email)}</td><td>${safe(role)}</td><td><span class="badge ${state === 'Pendiente' ? 'gold' : 'gray'}">${state}</span><small class="state-text">Vence: ${safe(new Date(item.expires_at).toLocaleDateString('es-CL'))}</small></td><td>${state === 'Pendiente' ? `<button class="ghost small" data-${platform ? 'platform' : 'team'}-revoke="${index}">Revocar</button>` : '—'}</td></tr>`;
   }).join('') || emptyRow(4,'Todavía no hay invitaciones.');
 }
@@ -305,18 +331,109 @@ async function loadTeam() {
   if (!canManageTeam()) return;
   $('teamStatus').textContent = 'Consultando accesos…';
   $('teamMembers').innerHTML = ''; $('teamInvitations').innerHTML = '';
-  teamMembers = []; teamInvitations = [];
+  teamMembers = []; teamInvitations = []; renderWorkerOptions();
   try {
     const result = await call('propina_restaurant_team', {rid:selected});
     if (version !== teamVersion || selected !== rid || !canManageTeam()) return;
     teamMembers = result.members || []; teamInvitations = result.invitations || [];
-    $('teamMembers').innerHTML = teamMembers.map((member, index) => `<tr><td>${safe(member.email)}</td><td><select data-member-role="${index}" aria-label="Permiso de ${safe(member.email)}"><option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrar el local</option><option value="viewer" ${member.role === 'viewer' ? 'selected' : ''}>Solo consultar</option></select></td><td><button class="secondary small" data-member-save="${index}">Guardar permiso</button> <button class="ghost small" data-member-remove="${index}">Retirar acceso</button></td></tr>`).join('') || emptyRow(3,'No hay colaboradores con acceso. Puedes invitarlos abajo.');
+    $('teamMembers').innerHTML = teamMembers.map((member, index) => `<tr><td>${safe(member.email)}<small class="state-text">${member.worker_id ? `${safe(member.worker_name)} · ${member.role === 'admin' || member.read_scope !== 'personal' ? 'Consulta del local' : 'Solo sus propinas'}` : 'Sin trabajador vinculado'}</small>${member.role === 'viewer' ? `<button class="ghost small" data-worker-edit="${index}">${member.worker_id ? 'Revisar vinculación' : 'Vincular trabajador'}</button>` : ''}</td><td><select data-member-role="${index}" aria-label="Permiso de ${safe(member.email)}"><option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrar el local</option><option value="viewer" ${member.role === 'viewer' ? 'selected' : ''}>${member.read_scope === 'personal' ? 'Consultar sus propinas' : 'Consultar todo el local'}</option></select></td><td><button class="secondary small" data-member-save="${index}">Guardar permiso</button> <button class="ghost small" data-member-remove="${index}">Retirar acceso</button></td></tr>`).join('') || emptyRow(3,'No hay colaboradores con acceso. Puedes invitarlos abajo.');
     $('teamInvitations').innerHTML = invitationRows(teamInvitations);
+    renderWorkerOptions();
     $('teamStatus').textContent = `${teamMembers.length} colaborador(es). El acceso del propietario está protegido.`;
   } catch (error) {
     if (version === teamVersion && selected === rid) $('teamStatus').textContent = 'No se pudieron consultar los accesos. ' + errorText(error);
   }
 }
+function resetWorkerForm() {
+  $('workerAccountMode').value = 'existing'; $('workerEmail').value = '';
+  $('linkMember').innerHTML = ''; $('linkWorker').innerHTML = '';
+  $('linkScope').value = 'personal'; $('linkAgreement').checked = false;
+  $('linkAgreementNote').value = ''; $('workerLinkResult').textContent = '';
+  renderWorkerForm();
+}
+function renderWorkerOptions() {
+  const account = $('linkMember').value, worker = $('linkWorker').value;
+  $('linkMember').innerHTML = '<option value="">Selecciona una cuenta</option>' + teamMembers.filter(m => m.role === 'viewer').map(m => `<option value="${safe(m.email)}">${safe(m.email)}${m.worker_name ? ' · '+safe(m.worker_name) : ''}</option>`).join('');
+  if (teamMembers.some(m => m.email === account && m.role === 'viewer')) $('linkMember').value = account;
+  $('linkWorker').innerHTML = '<option value="">Selecciona su ficha</option>' + workers.map(w => `<option value="${safe(w.id)}">${safe(w.name)}${w.active ? '' : ' (inactivo)'}</option>`).join('');
+  if (workers.some(w => w.id === worker)) $('linkWorker').value = worker;
+  renderWorkerForm();
+}
+function renderWorkerForm() {
+  const invite = $('workerAccountMode').value === 'invite';
+  $('linkMemberField').classList.toggle('hide', invite); $('workerEmailField').classList.toggle('hide', !invite);
+  $('saveWorkerLink').textContent = invite ? 'Crear invitación personal' : 'Guardar vinculación';
+  $('linkScopeHelp').textContent = $('linkScope').value === 'personal'
+    ? 'La cuenta verá solo las fechas, horas y propinas de esta ficha, incluido su historial anterior.'
+    : 'La cuenta podrá ver y exportar los trabajadores, jornadas y montos de todo el local. Usa esta opción solo con el acuerdo de todos.';
+}
+function selectWorkerAccount() {
+  const member = teamMembers.find(m => m.email === $('linkMember').value);
+  $('linkWorker').value = member?.worker_id || '';
+  $('linkScope').value = member?.worker_id ? member.read_scope || 'personal' : 'personal';
+  $('linkAgreement').checked = false; $('linkAgreementNote').value = '';
+  renderWorkerForm();
+}
+$('workerAccountMode').onchange = () => { $('linkAgreement').checked = false; $('workerLinkResult').textContent = ''; renderWorkerForm(); };
+$('linkMember').onchange = selectWorkerAccount;
+$('linkScope').onchange = () => { $('linkAgreement').checked = false; renderWorkerForm(); };
+$('linkWorker').onchange = () => { $('linkAgreement').checked = false; };
+$('teamMembers').addEventListener('click', event => {
+  const button = event.target.closest('[data-worker-edit]'); if (!button || !canManageTeam()) return;
+  const member = teamMembers[Number(button.dataset.workerEdit)]; if (!member) return;
+  $('workerAccountMode').value = 'existing'; $('linkMember').value = member.email; selectWorkerAccount();
+  $('linkWorker').focus();
+});
+bind('saveWorkerLink', async () => {
+  if (!canManageTeam()) throw Error('Solo el propietario puede vincular cuentas.');
+  const selected = rid, invite = $('workerAccountMode').value === 'invite';
+  const email = (invite ? $('workerEmail').value : $('linkMember').value).trim();
+  const worker = workers.find(w => w.id === $('linkWorker').value);
+  const scope = $('linkScope').value, note = $('linkAgreementNote').value.trim();
+  if (!email || invite && !$('workerEmail').checkValidity()) throw Error('Selecciona una cuenta o escribe un correo válido.');
+  if (!worker) throw Error('Selecciona la ficha del trabajador.');
+  if (!$('linkAgreement').checked || note.length < 10 || note.length > 500) throw Error('Confirma el acuerdo de todos los trabajadores y deja una nota de 10 a 500 caracteres.');
+  if (!confirm(`${invite ? '¿Invitar' : '¿Vincular'} a ${email} con ${worker.name}? Podrá consultar ${scope === 'personal' ? 'solo sus propinas' : 'todo el local'}, incluido el historial anterior.`)) return;
+  const args = {rid:selected,target_worker:worker.id,visibility:scope,agreement_confirmed:true,agreement_note:note};
+  const result = await call(invite ? 'propina_issue_worker_invitation' : 'propina_link_worker', {...args,[invite ? 'invitee_email' : 'member_email']:email});
+  if (selected !== rid || !canManageTeam()) return;
+  $('linkAgreement').checked = false;
+  $('workerLinkResult').className = 'notice success spaced';
+  if (invite) showToken(result,'workerLinkResult');
+  else $('workerLinkResult').textContent = `Cuenta vinculada a ${worker.name}. La persona puede actualizar Turnia para ver sus propinas.`;
+  await loadTeam();
+});
+async function loadMyTips(version, selectedId) {
+  $('myTipsStatus').textContent = 'Consultando tus propinas…';
+  try {
+    const data = await call('propina_my_tips', {rid:selectedId});
+    if (version !== loadVersion || selectedId !== rid) return;
+    myTips = Array.isArray(data) ? data : []; myTipsLoaded = true;
+    $('myTipsStatus').textContent = ''; renderMyTips();
+  } catch (error) {
+    if (version !== loadVersion || selectedId !== rid) return;
+    myTips = []; myTipsLoaded = false; renderMyTips();
+    $('myTipsStatus').textContent = 'No pudimos consultar tus propinas. '+errorText(error);
+  }
+}
+function renderMyTips() {
+  $('myWorkerName').textContent = currentRestaurant()?.worker_name || '';
+  $('myVisibility').textContent = personalOnly() ? 'Tu acceso permite consultar únicamente tus propinas.' : 'Tu cuenta también tiene acceso a la información del local.';
+  const from = $('myTipsFrom').value, to = $('myTipsTo').value;
+  const invalid = from && to && from > to;
+  const rows = invalid ? [] : myTips.filter(p => (!from || p.work_date >= from) && (!to || p.work_date <= to));
+  $('myTipsTotal').textContent = myTipsLoaded ? clp(rows.reduce((n,p) => n + Number(p.calculated_clp),0)) : '—';
+  $('myTipsDays').textContent = myTipsLoaded ? rows.length : '—';
+  $('myTipsRows').innerHTML = rows.map(p => `<tr><td>${safe(dateLabel(p.work_date))}</td><td>${safe(p.hours)} h</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(3,invalid ? 'La fecha Desde debe ser anterior o igual a Hasta.' : myTipsLoaded ? 'No hay jornadas asignadas a tu ficha en este período.' : 'Pulsa Actualizar para consultar tus propinas.');
+}
+$('myTipsFrom').onchange = renderMyTips; $('myTipsTo').onchange = renderMyTips;
+$('clearMyTips').onclick = () => { $('myTipsFrom').value = ''; $('myTipsTo').value = ''; renderMyTips(); };
+bind('viewGlobalTips', async () => {
+  if (!rid || personalOnly()) throw Error('El propietario debe habilitar la consulta global según el acuerdo del equipo.');
+  if (!days.some(d => d.work_date === $('payoutDate').value)) $('payoutDate').value = days[0]?.work_date || today();
+  setTab('distribution');
+});
+bind('refreshMyTips', async () => { await init(); setTab(hasWorkerLink() ? 'mytips' : 'access'); });
 async function loadPlatform() {
   const version = ++platformVersion;
   if (!context?.platform_admin) return;
@@ -383,7 +500,7 @@ $('platformOverview').addEventListener('click', event => {
   }, button);
 });
 const guideSteps = [
-  ['Activa tu acceso','Tu invitación es el punto de partida.', ['Usa el correo que Nicolás Valencia autorizó e ingresa el código en «Tengo una invitación».','Confirma el correo de registro e inicia sesión.','En Accesos y ajustes, pega el código y pulsa «Activar acceso y ver la guía».'], 'La autorización es individual. No compartas tu contraseña ni publiques tu código.', 'access'],
+  ['Activa tu acceso','Tu invitación es el punto de partida.', ['Usa el correo que Nicolás Valencia autorizó e ingresa el código en «Tengo una invitación».','Confirma el correo de registro e inicia sesión.','En Accesos y ajustes, pega el código y pulsa «Activar acceso».'], 'La autorización es individual. No compartas tu contraseña ni publiques tu código.', 'access'],
   ['Prepara tu restaurante','Cada local tiene su propio espacio.', ['Si eres propietario autorizado, crea tu local en Accesos y ajustes.','Si te invitaron como colaborador, el local aparecerá en el selector superior.','Cuando tengas más de un local, comprueba cuál está seleccionado antes de registrar.'], 'Si ya existe tu restaurante, selecciónalo para continuar.', 'access'],
   ['Define áreas y porcentajes','La suma debe ser exactamente 100%.', ['En Equipo y áreas, agrega los grupos que reciben propina.','Indica el porcentaje de cada área según el acuerdo de tu equipo.','Revisa el total y guarda cada cambio de porcentaje.'], 'Ejemplo: Garzones 60% + Cocina 25% + Barra 10% + Coperos 5% = 100%.', 'staff'],
   ['Agrega a tu equipo','Una persona, su nombre y su área.', ['Ingresa cada trabajador en Equipo y áreas.','Asigna el área correcta antes de agregarlo.','Desactiva a quienes ya no trabajan contigo; su historial se conserva.'], 'No necesitas crear una cuenta de acceso para cada persona que participa del reparto.', 'staff'],
@@ -397,7 +514,7 @@ const guideSteps = [
 function guideKey() { return user ? `turnia_guide_v1_${user.id}` : ''; }
 function readGuideProgress() {
   try { const saved = JSON.parse(storage.get(guideKey()) || '{}'); guideIndex = Math.max(0,Math.min(9,Number(saved.step) || 0)); guideDone = saved.done === true; } catch { guideIndex = 0; guideDone = false; }
-  $('onboardingBanner').classList.toggle('hide', guideDone || context?.platform_admin || !(rid || context?.can_create));
+  $('onboardingBanner').classList.toggle('hide', guideDone || personalOnly() || context?.platform_admin || !(rid || context?.can_create));
   renderGuide();
 }
 function saveGuideProgress() { if (user) storage.set(guideKey(), JSON.stringify({step:guideIndex,done:guideDone})); }
@@ -587,6 +704,7 @@ $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; resetData(); renderAccountSettings();
   if (tab === 'access') void loadTeam();
   $('profileRole').textContent = context?.platform_admin ? 'Propietario de Turnia' : roleLabel(currentRestaurant()?.role);
+  setTab(personalOnly() ? 'mytips' : tab === 'mytips' && !hasWorkerLink() ? 'home' : tab);
   await load();
 });
 bind('createRestaurant', async () => {
@@ -686,7 +804,10 @@ bind('acceptInvite', async () => {
   const token = $('acceptToken').value.trim();
   if (!/^[a-f0-9]{64}$/.test(token)) throw Error('Pega el código completo de 64 caracteres.');
   await call('propina_accept_invitation',{token}); $('acceptToken').value = '';
-  await init(); guideIndex = 0; guideDone = false; saveGuideProgress(); setTab('guide'); msg('Acceso activado. Bienvenido a Turnia.','success');
+  await init();
+  if (personalOnly()) setTab('mytips');
+  else { guideIndex = 0; guideDone = false; saveGuideProgress(); setTab('guide'); }
+  msg('Acceso activado. Bienvenido a Turnia.','success');
 });
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-tab],[data-go]'); if (el) setTab(el.dataset.tab || el.dataset.go);

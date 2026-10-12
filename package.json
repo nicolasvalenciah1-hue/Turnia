@@ -2,10 +2,10 @@
   "name": "turnia-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Pruebas de la aplicación web Turnia",
+  "description": "Pruebas de la aplicaci\u00f3n web Turnia",
   "scripts": {
     "check": "node --check dist/app.js && node --check dist/sw.js",
-    "test": "npm run check && node tests/ui-check.cjs && node tests/settings-check.cjs"
+    "test": "npm run check && node tests/ui-check.cjs && node tests/settings-check.cjs && node tests/worker-links-check.cjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
