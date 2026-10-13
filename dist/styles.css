@@ -410,3 +410,30 @@
  #history .history-day-area-title{padding:11px}
 }
 @media(prefers-reduced-motion:reduce){#history .history-day-caret{transition:none}}
+
+/* Owner-only support email delivery observability */
+.notification-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:10px 0 21px}
+.notification-metric{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:17px;min-width:0;display:flex;flex-direction:column;gap:5px}
+.notification-metric>span{font-size:12px;font-weight:650;color:var(--muted)}
+.notification-metric strong{font-size:29px;line-height:1.25;letter-spacing:-.8px;font-variant-numeric:tabular-nums}
+.notification-metric small{font-size:11px;color:var(--muted)}
+.notification-tools{margin:0 0 12px;gap:10px}
+.notification-tools label{margin:0}
+.notification-tools select{width:170px;min-height:39px}
+.notification-tools .muted{font-size:11px}
+.notifications-table{min-width:700px}
+.notifications-table .notification-subject{font-size:12px;max-width:300px;overflow-wrap:anywhere}
+.notifications-table .notification-subject strong{display:block;font-size:12px;margin-bottom:3px}
+.notify-pill{display:inline-block;white-space:nowrap;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#f1f5f6;color:#334b5b}
+.notify-pill.sent{background:#e7f4ec;color:#226d4a}
+.notify-pill.pending{background:#fff3d9;color:#755516}
+.notify-pill.failed{background:#fcebea;color:#a23630}
+@media(max-width:580px){
+  .notification-summary{gap:7px}
+  .notification-metric{padding:12px 9px;border-radius:11px}
+  .notification-metric strong{font-size:23px}
+  .notification-metric small{font-size:10px;line-height:1.4}
+  .notification-tools{align-items:center}
+  .notification-tools select{flex:1;min-width:125px}
+  .notification-tools .muted{width:100%}
+}
