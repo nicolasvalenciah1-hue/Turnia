@@ -107,7 +107,7 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=owner-notifications-20261013-1'),'Styles asset is versioned');
+  assert(html.includes('styles.css?v=team-spaces-20261013-1'),'Styles asset is versioned');
   assert(html.includes('app.js?v=team-spaces-20261013-1'),'App asset is versioned');
   assert(html.includes('weekly-excel.js?v=weekly-settlement-20261012-1'),'Offline XLSX generator is loaded');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
