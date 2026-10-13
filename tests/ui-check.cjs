@@ -281,6 +281,70 @@ if (require.main === module) (async()=>{
   assert.match(example.d.querySelector('#payouts').textContent,/169\.929/);
   assert.equal(example.errors.length,0);
   example.dom.window.close();
+
+  // Weekly Monday-Sunday split with one daily AM/PM pool, per-person totals,
+  // independent areas and the transfer-control worksheet.
+  const weeklyArea=[{id:'a1',name:'Garzones',percentage:65},{id:'a2',name:'Cocina',percentage:20},
+    {id:'a3',name:'Barra',percentage:10},{id:'a4',name:'Copería',percentage:5}];
+  const weeklyWorkers=[
+    {id:'w1',name:'Garzón principal',area_id:'a1',active:true},
+    {id:'w2',name:'Chef',area_id:'a2',active:true},
+    {id:'w3',name:'Barra',area_id:'a3',active:true},
+    {id:'w4',name:'Copero',area_id:'a4',active:true}
+  ];
+  const wk=await app({platform:false,role:'owner',dataOverrides:{
+    propina_areas:weeklyArea,propina_workers:weeklyWorkers,
+    propina_days:[
+      {id:'dSat',work_date:'2026-10-10',amount_clp:200000,hours_per_shift:8},
+      {id:'dMon',work_date:'2026-10-12',amount_clp:50000,hours_per_shift:8}
+    ],
+    propina_shifts:[],
+    propina_daily_distribution:[
+      ...[['w1','Garzón principal','a1','Garzones',130000],['w2','Chef','a2','Cocina',40000],
+         ['w3','Barra','a3','Barra',20000],['w4','Copero','a4','Copería',10000]].map(
+           ([worker_id,worker_name,area_id,area_name,calculated_clp])=>
+           ({day_id:'dSat',work_date:'2026-10-10',worker_id,worker_name,area_id,area_name,hours:8,percentage:65,calculated_clp})),
+      ...[['w1','Garzón principal','a1','Garzones',32500],['w2','Chef','a2','Cocina',10000],
+         ['w3','Barra','a3','Barra',5000],['w4','Copero','a4','Copería',2500]].map(
+           ([worker_id,worker_name,area_id,area_name,calculated_clp])=>
+           ({day_id:'dMon',work_date:'2026-10-12',worker_id,worker_name,area_id,area_name,hours:8,percentage:65,calculated_clp}))
+    ],
+    propina_flex_shifts:[
+      {id:'flexAM',work_date:'2026-10-11',shift_code:'AM',amount_clp:60000,rules:[],entries:[]},
+      {id:'flexPM',work_date:'2026-10-11',shift_code:'PM',amount_clp:40000,rules:[],entries:[]}
+    ],
+    propina_flex_payouts:[
+      ...[['w1','Garzón principal','a1','Garzones',65000],['w2','Chef','a2','Cocina',20000],
+         ['w3','Barra','a3','Barra',10000],['w4','Copero','a4','Copería',5000]].map(
+           ([worker_id,worker_name,area_id,area_name,calculated_clp])=>
+           ({work_date:'2026-10-11',group_code:'DIA',worker_id,worker_name,area_id,area_name,weight:1,calculated_clp}))
+    ]
+  }});
+  const select=wk.d.querySelector('#historyWeekSelect');
+  select.value='2026-10-05';select.dispatchEvent(new wk.w.Event('change'));
+  assert.equal(select.value,'2026-10-05');
+  assert.match(wk.d.querySelector('#historyWeekLabel').textContent,/11 oct/);
+  assert.equal(wk.d.querySelector('#historyRows').children.length,2,'Saturday + Sunday share one week');
+  assert.match(wk.d.querySelector('#historySummary').textContent,/300\\.000/,'Classic plus AM+PM funds total $300k');
+  assert.match(wk.d.querySelector('#weeklyStats').textContent,/300\\.000/);
+  assert.match(wk.d.querySelector('#weeklyWorkerRows').textContent,/195\\.000/,'Waiter receives 130k Saturday + 65k Sunday');
+  assert.match(wk.d.querySelector('#weeklyAreaRows').textContent,/60\\.000/,'Kitchen receives 40k Saturday and 20k Sunday');
+  assert.equal(wk.d.querySelector('#weeklyNotice').classList.contains('error'),false,'No double counting DIA');
+  wk.d.querySelector('#historyNextWeek').click();
+  assert.equal(wk.d.querySelector('#historyWeekSelect').value,'2026-10-12','Monday starts next weekly period');
+  assert.equal(wk.d.querySelector('#historyRows').children.length,1);
+  assert.match(wk.d.querySelector('#historySummary').textContent,/50\\.000/);
+  assert.doesNotMatch(wk.d.querySelector('#weeklyWorkerRows').textContent,/195\\.000/);
+  wk.d.querySelector('#historyPrevWeek').click();
+  wk.d.querySelector('#export').click(); await flush();
+  const weeklyBytes=await new Promise(resolve=>{const reader=new wk.w.FileReader();reader.onload=()=>resolve(new TextDecoder().decode(new Uint8Array(reader.result)));reader.readAsArrayBuffer(wk.blob());});
+  assert(weeklyBytes.includes('Cierre semanal'));
+  assert(weeklyBytes.includes('Control de transferencias')||weeklyBytes.includes('CONTROL DE TRANSFERENCIAS'));
+  assert(weeklyBytes.includes('<v>195000</v>'),'Workbook contains weekly total per waiter');
+  assert(weeklyBytes.includes('<v>60000</v>'),'Workbook contains kitchen weekly total');
+  assert(weeklyBytes.includes('Sin registrar'),'Payments are never marked as confirmed');
+  assert.equal(wk.errors.length,0);
+  wk.dom.window.close();
   const b=await app({platform:false,role:'viewer'});
   assert(b.d.querySelector('#saveDay').disabled,'Viewer cannot save');
   assert(b.d.querySelector('[data-day-percent="w2"]').disabled,'Viewer cannot edit individual share');
