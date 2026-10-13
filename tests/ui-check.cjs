@@ -105,13 +105,20 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=weekly-settlement-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=weekly-settlement-20261012-1'),'App asset is versioned');
+  assert(html.includes('styles.css?v=mobile-weekly-20261012-1'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=mobile-weekly-20261012-1'),'App asset is versioned');
   assert(html.includes('weekly-excel.js?v=weekly-settlement-20261012-1'),'Offline XLSX generator is loaded');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(css.includes('.classic-area-preview'),'Independent area quota preview is styled');
-  assert(sw.includes('turnia-shell-v10'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v11'),'App shell cache version bumped');
+  assert(css.includes('@media(max-width:600px)'),'Mobile CSS applies to small phones');
+  assert(css.includes('.summary-grid-home'),'Dashboard KPI cards use responsive layout');
+  assert(css.includes('.weekly-mobile-bottom'),'Weekly Excel action has mobile sticky bar');
+  assert(css.includes('#attendance tr'),'Full-day worker forms avoid horizontal phone tables');
+  assert(css.includes('.weekly-area-group'),'Weekly area groups display as cards on phones');
+  assert(html.includes('id="weeklyMobileTotal"'),'Mobile close displays the actual distributed total');
+  assert(html.includes('id="recentDaysMobile"'),'Mobile home has accessible recent day cards');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
    assert.equal(a.d.querySelector('#avatar').textContent,'M','Platform owner displays Mutavia monogram');
   // Personal settings can be used by every logged-in user.
@@ -136,6 +143,30 @@ if (require.main === module) (async()=>{
   assert(a.calls.some(x=>x[0]==='propina_update_restaurant_business_profile' && x[1].rid==='r1' && x[1].restaurant_name==='Restaurante Nuevo'),'Restaurant updated via owner RPC');
   assert.equal(a.d.querySelector('#restaurant').selectedOptions[0].textContent,'Restaurante Nuevo','Renamed restaurant appears in selector');
 
+  assert(a.d.querySelectorAll('#recentDaysMobile .recent-day-card').length>0,'Home renders mobile recent-day cards');
+  assert(a.d.querySelector('#recentDaysMobile').textContent.includes('100.000'),'Mobile home shows real day totals');
+  assert(a.d.querySelector('#weeklyGroups details').length!==0,'Areas have real grouped weekly cards');
+  assert(a.d.querySelector('#weeklyMobileTotal').textContent.includes('100.000'),'Sticky weekly footer shows real distribution');
+  const group= a.d.querySelector('#weeklyGroups details');
+  assert(group.open,'The first weekly area is expanded initially');
+  a.d.querySelector('#weeklyExpandAll').click();
+  assert(a.d.querySelectorAll('#weeklyGroups details:not([open])').length===1,'Expand-all control collapses when all areas are open');
+  a.d.querySelector('#weeklyExpandAll').click();
+  assert(group.open,'Expand-all control reopens grouped area');
+  const personButton=a.d.querySelector('#weeklyGroups [data-week-person]');
+  assert(personButton,'Worker card has accessible detail control');
+  personButton.click();
+  assert(!a.d.querySelector('#weeklyPersonDetail').classList.contains('hide'),'Worker daily breakdown is available');
+  assert(a.d.querySelectorAll('#weeklyPersonDetail .weekly-person-day').length===7,'Detail spans Monday to Sunday');
+  assert(a.d.querySelector('#weeklyPersonDetail').textContent.includes('no acredita')||
+    a.d.querySelector('#weeklyPersonDetail').textContent.includes('no comprobante'),'Detail does not claim a bank transfer');
+  a.d.querySelector('[data-week-person-xlsx]').click();await flush();
+  const individualXlsx=await new Promise(r=>{const reader=new a.w.FileReader();reader.onload=()=>r(new TextDecoder().decode(new Uint8Array(reader.result)));reader.readAsArrayBuffer(a.blob());});
+  assert(individualXlsx.includes('LIQUIDACIÓN PERSONAL'),'Personal downloadable statement is a genuine XLSX workbook');
+  assert(individualXlsx.includes('100000')===false || individualXlsx.includes('40000'),'Workbook is generated from saved person data');
+  a.d.querySelector('[data-week-close]').click();
+  assert(a.d.querySelector('#weeklyPersonDetail').classList.contains('hide'),'Worker detail closes without losing weekly totals');
+  assert.equal(a.errors.length,0,'Responsive settlement did not cause a JavaScript error');
   assert(!a.d.querySelector('#ownerNav').classList.contains('hide'));
   for(const name of ['home','daily','distribution','history','staff','access','guide','owner']){
     a.d.querySelector(`[data-tab="${name}"]`).click(); assert(!a.d.getElementById(name).classList.contains('hide'),name+' navigation');
@@ -336,6 +367,12 @@ if (require.main === module) (async()=>{
   assert.match(wk.d.querySelector('#historySummary').textContent,/50\.000/);
   assert.doesNotMatch(wk.d.querySelector('#weeklyWorkerRows').textContent,/195\.000/);
   wk.d.querySelector('#historyPrevWeek').click();
+  assert.equal(wk.d.querySelector('#weeklyGroups details').length,4,'Weekly mobile cards group all four areas');
+  const cards=[...wk.d.querySelectorAll('#weeklyGroups [data-week-person]')];
+  assert.equal(cards.length,4,'Each worker is included once in their respective area');
+  assert.equal(wk.d.querySelector('#weeklyMobileTotal').textContent.includes('300.000'),true,'Sticky mobile total follows selected week');
+  wk.d.querySelector('#exportMobile').click();await flush();
+  assert(wk.blob(),'Sticky mobile Excel button exports the actual selected week');
   wk.d.querySelector('#export').click(); await flush();
   const weeklyBytes=await new Promise(resolve=>{const reader=new wk.w.FileReader();reader.onload=()=>resolve(new TextDecoder().decode(new Uint8Array(reader.result)));reader.readAsArrayBuffer(wk.blob());});
   assert(weeklyBytes.includes('Cierre semanal'));
