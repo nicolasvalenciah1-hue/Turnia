@@ -1523,7 +1523,7 @@ bind('saveDay', async () => {
   $('payoutDate').value = date; await load();
   const stored = days.find(d=>d.work_date===date);
   if (!stored || Number(stored.amount_clp)!==amount) throw Error('La base de datos no confirmó el monto de la jornada. Revisa el historial antes de intentarlo de nuevo.');
-  $('daySaveStatus').textContent = 'Jornada del '+dateLabel(date)+' guardada por '+clp(amount)+'. Reparto fijo y cuadrado al peso.';
+  $('daySaveStatus').textContent = 'Jornada del '+dateLabel(date)+' guardada correctamente por '+clp(amount)+'. Reparto fijo y cuadrado al peso.';
   $('daySaveStatus').className = 'notice success spaced';
   if (!guideDone && guideIndex >= 4 && guideIndex <= 6) { guideIndex = 7; saveGuideProgress(); }
   setTab('distribution'); msg('Jornada del '+dateLabel(date)+' guardada: '+clp(amount)+'. Reparto calculado.','success');
