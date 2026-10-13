@@ -3,6 +3,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {app,flush}=require('./ui-check.cjs');
 const sql=fs.readFileSync(__dirname+'/../supabase/migrations/20261013_owner_support_notification_dashboard.sql','utf8');
+const privateAccess=fs.readFileSync(__dirname+'/../supabase/migrations/20261013_turnia_private_notification_access.sql','utf8');
+const privateRpc=fs.readFileSync(__dirname+'/../supabase/migrations/20261013_turnia_private_notification_rpc.sql','utf8');
 const id1='4694fa56-0000-4000-8000-000000000001';
 const id2='8141f66b-0000-4000-8000-000000000002';
 const id3='9a9a9a9a-0000-4000-8000-000000000003';
@@ -23,11 +25,18 @@ const latest=()=>{
   assert.match(sql,/grant execute on function public\.turnia_owner_support_notification_overview\(\)\s+to authenticated/i);
   assert(!/grant\s+select\s+on\s+public\.turnia_support_email_outbox\s+to authenticated/i.test(sql));
   let data=latest();
+  assert.match(privateAccess,/propina_private\.turnia_notification_owner/);
+  assert.match(privateAccess,/sole_account boolean not null default true unique/);
+  assert.match(privateAccess,/propina_private\.is_platform_admin\(\)/);
+  assert.match(privateAccess,/revoke all on propina_private\.turnia_notification_owner from public, anon, authenticated/);
+  assert.match(privateRpc,/propina_private\.is_turnia_notification_owner\(\)/);
+  assert.match(privateAccess,/grant execute on function public\.turnia_notifications_access\(\) to authenticated/);
   const owner=await app({platform:true,rpcOverrides:{
     propina_platform_snapshot:async()=>({data:{restaurants:[],invitations:[]}}),
     turnia_owner_support_notification_overview:async()=>({data})
   }});
-  owner.d.querySelector('[data-tab="owner"]').click();
+  assert(!owner.d.querySelector('#notificationsNav').classList.contains('hide'),'Exclusive navigation is displayed to authorized account');
+  owner.d.querySelector('[data-tab="notifications"]').click();
   await flush();await flush();
   assert.equal(owner.d.querySelector('#ownerNotificationsSent').textContent,'2');
   assert.equal(owner.d.querySelector('#ownerNotificationsPending').textContent,'1');
@@ -54,8 +63,12 @@ const latest=()=>{
   assert.equal(owner.errors.length,0,'No browser errors in notification owner dashboard');
   owner.dom.window.close();
 
+  assert(owner.d.querySelector('#ownerNotificationsPanel').closest('section').id==='notifications','Panel is separate from owner page');
   const client=await app({platform:false,role:'viewer',restaurantContext:{read_scope:'personal',worker_id:'w1'}});
   assert(client.d.querySelector('#ownerNav').classList.contains('hide'),'Owner panel must be hidden from restaurant viewers');
+  assert(client.d.querySelector('#notificationsNav').classList.contains('hide'),'Notification menu must be hidden from customers');
+  client.d.querySelector('[data-tab="notifications"]').click();await flush();
+  assert(client.d.querySelector('#notifications').classList.contains('hide'),'Customers cannot open notifications by a hidden button');
   client.d.querySelector('[data-tab="owner"]').click();
   await flush();
   assert(client.d.querySelector('#owner').classList.contains('hide'),'Non-owner cannot switch to privileged owner tab');
@@ -63,13 +76,20 @@ const latest=()=>{
   assert.equal(client.errors.length,0);
   client.dom.window.close();
 
+  const restricted=await app({platform:true,rpcOverrides:{turnia_notifications_access:async()=>({data:false})}});
+  assert(restricted.d.querySelector('#ownerNav').classList.contains('hide')===false,'Future platform administrators retain normal owner navigation');
+  assert(restricted.d.querySelector('#notificationsNav').classList.contains('hide'),'Non-whitelisted platform administrator cannot see notifications menu');
+  restricted.d.querySelector('[data-tab="notifications"]').click();await flush();
+  assert(restricted.d.querySelector('#notifications').classList.contains('hide'),'Non-whitelisted admin cannot navigate to the notification page');
+  assert(!restricted.calls.some(call=>call[0]==='turnia_owner_support_notification_overview'),'Private delivery summary is never requested without permission');
+  restricted.dom.window.close();
   const denied=await app({platform:true,rpcOverrides:{
     propina_platform_snapshot:async()=>({data:{restaurants:[],invitations:[]}}),
     turnia_owner_support_notification_overview:async()=>({error:{message:'permission denied'}})
   }});
-  denied.d.querySelector('[data-tab="owner"]').click();await flush();await flush();
+  denied.d.querySelector('[data-tab="notifications"]').click();await flush();await flush();
   assert.match(denied.d.querySelector('#ownerNotificationsStatus').textContent,/No se pudieron consultar/);
   assert(!/permission denied/i.test(denied.d.querySelector('#ownerNotificationsStatus').textContent),'No sensitive error details displayed');
   denied.dom.window.close();
-  console.log('PASS: owner-only notification dashboard, status filters, escaping, refresh, access guard and safe error UX. Mock tests only.');
+  console.log('PASS: standalone private notifications tab, future-admin access denial, filters, escaping, refresh and safe error UX. Mock tests only.');
 })().catch(e=>{console.error(e);process.exitCode=1});
