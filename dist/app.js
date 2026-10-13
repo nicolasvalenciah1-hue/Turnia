@@ -119,7 +119,7 @@ function updatePermissions() {
   document.querySelectorAll('.edit-only').forEach(el => el.classList.toggle('hide', !canEdit()));
   $('saveFlexShift').disabled = !editing;
   ['saveDay','addArea','addWorker','amount','shiftHours'].forEach(id => $(id).disabled = !editing);
-  $('createRestaurantPanel').classList.toggle('hide', !context?.can_create);
+  $('createRestaurantPanel').classList.toggle('hide', !context?.can_create || teamSpace);
   $('staffInvitePanel').classList.toggle('hide', !canInvite());
   $('teamAccessPanel').classList.toggle('hide', !canManageTeam());
   $('workerLinkPanel').classList.toggle('hide', !canManageTeam());
@@ -349,6 +349,7 @@ async function init() {
   }
   if (personalOnly()) setTab(tab === 'access' ? 'access' : 'mytips');
   else if (tab === 'mytips' && !hasWorkerLink()) setTab('home');
+  else if (!guideDone && teamSpace) setTab('staff');
   else if (!guideDone && !context.platform_admin && (rid || context.can_create)) setTab('guide');
 }
 async function load() {
@@ -1760,6 +1761,7 @@ sb.auth.onAuthStateChange(event => {
     recoveryMode = true; $('auth').classList.add('hide'); $('app').classList.add('hide'); $('loading').classList.add('hide'); $('recovery').classList.remove('hide');
   }
   if (event === 'SIGNED_OUT') {
+    teamSpace=false;
     $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
     authVersion++; teamVersion++; platformVersion++; supportVersion++; ownerSupportVersion++; ownerNotificationVersion++; notificationsAuthorized=false; tab='home'; selectedSupportTicket=null; supportTickets=[]; ownerSupportTickets=[]; ownerNotificationItems=[];
     platformRestaurants = []; platformInvitations = [];
