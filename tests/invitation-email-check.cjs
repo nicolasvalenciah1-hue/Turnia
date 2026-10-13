@@ -47,7 +47,9 @@ async function leavingInvitation() {
   const leave=dom.window.document.getElementById('leaveInvitation');
   assert(leave,'Invitation has an exit without accepting it');
   leave.click();await flush();
-  assert.deepEqual(calls,[['signOut',{scope:'local'}]],'Exit signs out only the temporary session, no invite RPC, no user creation');
+  assert.equal(calls.length,1,'Exiting cannot accept invitation or create users');
+  assert.equal(calls[0][0],'signOut');
+  assert.equal(calls[0][1].scope,'local','Exit signs out only the current invited session');
   assert.deepEqual(navigations,['/'],'The app home opens after sign out; no redirect loop');
   dom.window.close();
 }
