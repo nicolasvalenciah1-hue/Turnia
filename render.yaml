@@ -5,7 +5,7 @@ services:
     name: turnia
     repo: https://github.com/nicolasvalenciah1-hue/Turnia
     branch: main
-    buildCommand: node --check dist/app.js && node --check dist/sw.js
+    buildCommand: npm run check
     staticPublishPath: dist
     autoDeployTrigger: commit
     envVars:

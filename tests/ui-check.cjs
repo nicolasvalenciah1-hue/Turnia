@@ -7,6 +7,8 @@ const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
 const weeklyExcelCode = fs.readFileSync(__dirname+'/../dist/weekly-excel.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
+function savedCalls(a,scope){return a.calls.filter(c=>c[0]==='turnia_close_day'&&(scope==='DAY'?c[1].p_scope==='DAY':c[1].p_scope!=='DAY')).map(c=>{const p=c[1].p_payload;return [c[0],{...c[1],p_amount:p.gross,p_workers:p.workers,p_entries:p.workers,p_shift:c[1].p_scope,p_modes:p.modes}];});}
+function confirmClosure(a,scope='DAY'){const b=a.d.querySelector(scope==='DAY'?'#specialDAY':'#specialFLEX');const c=b.querySelector('[data-special-confirm]');if(c)c.checked=true;const r=b.querySelector('[data-special-reason]');if(r)r.value='Corrección de prueba acordada';}
 async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', initialUrl='https://turnia.test/', restaurantContext={}, rpcOverrides={}, authOverrides={}, dataOverrides={}, userMetadata={}}={}) {
   const dom = new JSDOM(html,{url:initialUrl,runScripts:'outside-only'}), w=dom.window, d=w.document;
   const calls=[]; let capturedBlob; const errors=[];
@@ -65,6 +67,17 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     if(name==='turnia_registration_status')return {data:{status:'pending_payment',restaurant_name:'Restaurante de prueba'}};
     if(name==='turnia_sandbox_checkout_available')return {data:false};
     if(name==='propina_membership_context')return {data:[{restaurant_id:'r1',status:'active',payment_status:'trial',days_remaining:20,expires_at:'2026-11-01'}]};
+    if(name==='turnia_close_day'){
+      const p=args.p_payload;
+      data.turnia_tip_closures ||= [];
+      data.turnia_tip_closures=data.turnia_tip_closures.filter(c=>c.work_date!==args.p_date||c.scope!==args.p_scope);
+      data.turnia_tip_closures.push({work_date:args.p_date,scope:args.p_scope,revision:args.p_expected_revision+1,gross_clp:p.gross,special_clp:p.tips.reduce((s,t)=>s+t.amount,0),payload:p});
+      data.turnia_special_allocations ||= [];
+      data.turnia_special_allocations=data.turnia_special_allocations.filter(c=>c.work_date!==args.p_date||c.scope!==args.p_scope);
+      for(const t of p.tips)for(const a of t.allocations){const w=data.propina_workers.find(w=>w.id===a.worker_id);data.turnia_special_allocations.push({work_date:args.p_date,scope:args.p_scope,worker_id:w.id,worker_name:w.name,area_id:w.area_id,area_name:data.propina_areas.find(ar=>ar.id===w.area_id).name,amount_clp:a.amount});}
+      name=args.p_scope==='DAY'?'propina_save_day':'propina_save_flex_shift';
+      args={...args,p_amount:p.gross-p.tips.reduce((s,t)=>s+t.amount,0),p_shift_hours:p.hours,p_workers:p.workers,p_shift:args.p_scope,p_modes:p.modes,p_entries:p.workers};
+    }
     if(name==='propina_save_flex_shift'){
       const rules=args.p_modes.map(m=>({...m,area_name:'Garzones',percentage:100}));
       const entries=args.p_entries.map(e=>({...e,worker_name:e.worker_id==='w2'?'Camila':'=FORMULA',area_id:'a1'}));
@@ -101,7 +114,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   w.supabase={createClient:()=>sb};
   w.confirm=()=>true; w.URL.createObjectURL=blob=>{capturedBlob=blob;return 'blob:mock';};w.URL.revokeObjectURL=()=>{};
   w.HTMLAnchorElement.prototype.click=function(){};
-  w.eval(weeklyExcelCode); w.eval(code.replaceAll('location.replace(', 'window.__navigate(')); await flush();
+  w.eval(fs.readFileSync(__dirname+'/../dist/special-tips.js','utf8')); w.eval(weeklyExcelCode); w.eval(code.replaceAll('location.replace(', 'window.__navigate(')); await flush();
   return {w,d,calls,errors,dom,authChange,sb,user,context,navigations,blob:()=>capturedBlob};
 }
 if (require.main === module) (async()=>{
@@ -111,12 +124,12 @@ if (require.main === module) (async()=>{
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=area-safety-20261013-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=auth-session-fix-20261013-1'),'App asset is versioned');
+  assert(html.includes('app.js?v=special-tips-20261013-1'),'App asset is versioned');
   assert(html.includes('weekly-excel.js?v=weekly-settlement-20261012-1'),'Offline XLSX generator is loaded');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(css.includes('.classic-area-preview'),'Independent area quota preview is styled');
-  assert(sw.includes('turnia-shell-v20'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v21'),'App shell cache version bumped');
   assert(css.includes('@media(max-width:600px)'),'Mobile CSS applies to small phones');
   assert(css.includes('.summary-grid-home'),'Dashboard KPI cards use responsive layout');
   assert(css.includes('.weekly-mobile-bottom'),'Weekly Excel action has mobile sticky bar');
@@ -224,8 +237,8 @@ if (require.main === module) (async()=>{
   a.d.querySelector('[data-tab="daily"]').click();
   a.d.querySelector('#date').value=date; a.d.querySelector('#date').dispatchEvent(new a.w.Event('change'));
   a.d.querySelector('#amount').value='120000'; a.d.querySelector('[data-present="w2"]').checked=true;
-  a.d.querySelector('#saveDay').click(); await flush();
-  const save=a.calls.find(c=>c[0]==='propina_save_day'); assert(save,'Atomic day RPC');
+  confirmClosure(a,'DAY');a.d.querySelector('#saveDay').click(); await flush();
+  const save=savedCalls(a,'DAY')[0]; assert(save,'Atomic day RPC');
   assert.equal(save[1].p_amount,120000);assert.deepEqual(JSON.parse(JSON.stringify(save[1].p_workers)),[{worker_id:'w2',hours:8,participation:1,note:'',agreed:false}]);
   assert(!a.d.querySelector('#distribution').classList.contains('hide'),'Saved day opens distribution');
   assert.match(a.d.querySelector('#daySaveStatus').textContent,/guardada correctamente/i,'Save must be confirmed next to the form');
@@ -256,13 +269,13 @@ if (require.main === module) (async()=>{
   classic.d.querySelector('[data-present="w2"]').checked=true;
   assert.equal(classic.d.querySelector('[data-day-percent="w2"]').value,'100','Default participation is 100%');
   classic.d.querySelector('[data-day-percent="w2"]').value='25';
-  classic.d.querySelector('#saveDay').click();await flush();
-  assert(!classic.calls.some(x=>x[0]==='propina_save_day'),'25% without agreement cannot be saved');
+  confirmClosure(classic,'DAY');classic.d.querySelector('#saveDay').click();await flush();
+  assert(!savedCalls(classic,'DAY').length,'25% without agreement cannot be saved');
   assert.match(classic.d.querySelector('#daySaveStatus').textContent,/acuerdo/i);
   classic.d.querySelector('[data-day-note="w2"]').value='Trabajadora en período de aprendizaje';
   classic.d.querySelector('[data-day-agreed="w2"]').checked=true;
-  classic.d.querySelector('#saveDay').click();await flush();
-  const firstClassic=classic.calls.filter(x=>x[0]==='propina_save_day');
+  confirmClosure(classic,'DAY');classic.d.querySelector('#saveDay').click();await flush();
+  const firstClassic=savedCalls(classic,'DAY');
   assert.equal(firstClassic.length,1,'Special share saved once after validation');
   assert.equal(firstClassic[0][1].p_workers[1].participation,0.25);
   assert.equal(firstClassic[0][1].p_workers[0].participation,1);
@@ -276,8 +289,8 @@ if (require.main === module) (async()=>{
   assert(classic.d.querySelector('[data-day-agreed="w2"]').checked,'Edit restores agreement');
   classic.d.querySelector('[data-day-percent="w2"]').value='75';
   classic.d.querySelector('[data-day-note="w2"]').value='Avance de aprendizaje aprobado por equipo';
-  classic.d.querySelector('#saveDay').click();await flush();
-  const savedClassic=classic.calls.filter(x=>x[0]==='propina_save_day');
+  confirmClosure(classic,'DAY');classic.d.querySelector('#saveDay').click();await flush();
+  const savedClassic=savedCalls(classic,'DAY');
   assert.equal(savedClassic.length,2,'Editing existing classic day updates record');
   assert.equal(savedClassic[1][1].p_workers[1].participation,0.75);
   assert.equal(savedClassic[1][1].p_workers[0].participation,1);
@@ -301,8 +314,8 @@ if (require.main === module) (async()=>{
   doubles.d.querySelector('[data-day-percent="w2"]').value='200';
   doubles.d.querySelector('[data-day-percent="w2"]').dispatchEvent(new doubles.w.Event('input',{bubbles:true}));
   assert.match(doubles.d.querySelector('#classicPointsWarning').textContent,/supera 2 puntos/);
-  doubles.d.querySelector('#saveDay').click(); await flush();
-  assert(!doubles.calls.some(c=>c[0]==='propina_save_day'),'Four points on 16 hours are blocked');
+  confirmClosure(doubles,'DAY');doubles.d.querySelector('#saveDay').click(); await flush();
+  assert(!savedCalls(doubles,'DAY').length,'Four points on 16 hours are blocked');
   doubles.dom.window.close();
   // 5 waiter points: 1+1+1+0.5+2=5.5, with kitchen still receiving 20%.
   const areasSample=[{id:'a1',name:'Garzones',percentage:65},{id:'a2',name:'Cocina',percentage:20},{id:'a3',name:'Barra',percentage:10},{id:'a4',name:'Copería',percentage:5}];
@@ -328,8 +341,8 @@ if (require.main === module) (async()=>{
   assert.match(example.d.querySelector('[data-day-estimate="w5"]').textContent,/169\.929/);
   assert.match(example.d.querySelector('[data-day-estimate="w4"]').textContent,/42\.482/);
   assert.match(example.d.querySelector('[data-day-estimate="w1"]').textContent,/84\.965/);
-  example.d.querySelector('#saveDay').click();await flush();
-  assert(example.calls.some(c=>c[0]==='propina_save_day'));
+  confirmClosure(example,'DAY');example.d.querySelector('#saveDay').click();await flush();
+  assert(savedCalls(example,'DAY').length);
   assert.match(example.d.querySelector('#payouts').textContent,/143\.787/);
   assert.match(example.d.querySelector('#payouts').textContent,/169\.929/);
   assert.equal(example.errors.length,0);
@@ -476,13 +489,13 @@ if (require.main === module) (async()=>{
   const present=flex.d.querySelector('[data-flex-present="w2"]');
   present.checked=true;
   flex.d.querySelector('[data-flex-percent="w2"]').value='25';
-  flex.d.querySelector('#saveFlexShift').click();await flush();
-  assert(!flex.calls.some(x=>x[0]==='propina_save_flex_shift'),'Special share without agreement must be blocked');
+  confirmClosure(flex,'FLEX');flex.d.querySelector('#saveFlexShift').click();await flush();
+  assert(!savedCalls(flex,'FLEX').length,'Special share without agreement must be blocked');
   assert.match(flex.d.querySelector('#message').textContent,/acuerdo/i);
   flex.d.querySelector('[data-flex-agreed="w2"]').checked=true;
   flex.d.querySelector('[data-flex-note="w2"]').value='Aprobado por el equipo para el trabajador en prueba';
-  flex.d.querySelector('#saveFlexShift').click();await flush();
-  const flexSave=flex.calls.find(x=>x[0]==='propina_save_flex_shift');
+  confirmClosure(flex,'FLEX');flex.d.querySelector('#saveFlexShift').click();await flush();
+  const flexSave=savedCalls(flex,'FLEX')[0];
   assert(flexSave,'AM/PM saved via dedicated server RPC');
   assert.equal(flexSave[1].p_shift,'AM');
   assert.equal(flexSave[1].p_amount,1001);
@@ -500,8 +513,8 @@ if (require.main === module) (async()=>{
   flex.d.querySelector('[data-flex-percent="w2"]').value='75';
   flex.d.querySelector('[data-flex-note="w2"]').value='Aprendizaje avanzado acordado para turno PM';
   flex.d.querySelector('[data-flex-agreed="w2"]').checked=true;
-  flex.d.querySelector('#saveFlexShift').click(); await flush();
-  const flexSaves=flex.calls.filter(x=>x[0]==='propina_save_flex_shift');
+  confirmClosure(flex,'FLEX');flex.d.querySelector('#saveFlexShift').click(); await flush();
+  const flexSaves=savedCalls(flex,'FLEX');
   assert.equal(flexSaves.length,2);
   assert.equal(flexSaves[1][1].p_entries[0].weight,0.75,'PM stores 75% independently from AM 25%');
   assert.equal(flexSaves[0][1].p_entries[0].weight,0.25,'AM 25% remains unchanged');
@@ -522,24 +535,24 @@ if (require.main === module) (async()=>{
   flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]').click();
   assert.equal(flex.d.querySelector('#flexDate').value,'2026-10-09');
   assert.equal(flex.d.querySelector('#dayEntryMode').value,'flex','Unified history opens saved AM/PM mode');
-  const beforeClassic = flex.calls.filter(x=>x[0]==='propina_save_day').length;
+  const beforeClassic = savedCalls(flex,'DAY').length;
   flex.d.querySelector('#dayEntryMode').value='classic';
   flex.d.querySelector('#dayEntryMode').dispatchEvent(new flex.w.Event('change'));
   flex.d.querySelector('#date').value='2026-10-09';
   flex.d.querySelector('#date').dispatchEvent(new flex.w.Event('change'));
   flex.d.querySelector('#amount').value='1001';
   flex.d.querySelector('[data-present="w2"]').checked=true;
-  flex.d.querySelector('#saveDay').click(); await flush();
-  assert.equal(flex.calls.filter(x=>x[0]==='propina_save_day').length,beforeClassic,'Cannot save full day over a flexible turn');
+  confirmClosure(flex,'DAY');flex.d.querySelector('#saveDay').click(); await flush();
+  assert.equal(savedCalls(flex,'DAY').length,beforeClassic,'Cannot save full day over a flexible turn');
   assert.match(flex.d.querySelector('#daySaveStatus').textContent,/no se guardó.*AM\/PM/i,'Conflict shown beside save button');
-  assert(!flex.calls.some(x=>x[0]==='propina_save_day'),'Flexible saves cannot overwrite classic days');
+  assert(!savedCalls(flex,'DAY').length,'Flexible saves cannot overwrite classic days');
   flex.d.querySelector('#flexDate').value='2026-10-01';
   flex.d.querySelector('#flexDate').dispatchEvent(new flex.w.Event('change'));
   flex.d.querySelector('#flexAmount').value='1000';
   flex.d.querySelector('[data-flex-present="w2"]').checked=true;
-  const savedCount=flex.calls.filter(x=>x[0]==='propina_save_flex_shift').length;
-  flex.d.querySelector('#saveFlexShift').click();await flush();
-  assert.equal(flex.calls.filter(x=>x[0]==='propina_save_flex_shift').length,savedCount,'Cannot duplicate an existing classic date');
+  const savedCount=savedCalls(flex,'FLEX').length;
+  confirmClosure(flex,'FLEX');flex.d.querySelector('#saveFlexShift').click();await flush();
+  assert.equal(savedCalls(flex,'FLEX').length,savedCount,'Cannot duplicate an existing classic date');
   flex.dom.window.close();
 
 
@@ -593,7 +606,7 @@ if (require.main === module) (async()=>{
   relog.d.querySelector('#loginForm').dispatchEvent(new relog.w.Event('submit',{bubbles:true,cancelable:true}));await flush();
   assert(!relog.d.querySelector('#app').classList.contains('hide'),'New password signs in successfully');
   assert.equal(relog.context.restaurants.length,2,'All restaurant memberships survive password changes');
-  assert(!relog.calls.some(x=>x[0]==='propina_save_day'),'Password regression test does not write any tips');
+  assert(!savedCalls(relog,'DAY').length,'Password regression test does not write any tips');
   relog.dom.window.close();
 
   // Platform owner can archive and restore with explicit text confirmation.
@@ -641,7 +654,7 @@ if (require.main === module) (async()=>{
   assert(!worker.d.querySelector('#mytips').classList.contains('hide'),'Personal-only worker gets their own tab');
   assert(worker.d.querySelector('#teamAccessPanel').classList.contains('hide'));
   assert(worker.d.querySelector('#staff').classList.contains('hide'));
-  assert(!worker.calls.some(x=>x[0]==='query'),'Personal-only worker does not query shared tables');
+  assert(!worker.calls.some(x=>x[0]==='query' && x[1]!=='turnia_special_allocations'),'Personal-only worker does not query shared tables');
   assert(worker.calls.some(x=>x[0]==='propina_my_tips'),'Personal-only worker uses scoped server RPC');
   assert(worker.d.querySelector('#saveDay').disabled,'Personal-only worker cannot change shifts');
   worker.dom.window.close();
