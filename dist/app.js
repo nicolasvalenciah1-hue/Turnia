@@ -1947,6 +1947,8 @@ sb.auth.onAuthStateChange(event => {
     resetData(); $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('recovery').classList.add('hide'); $('auth').classList.remove('hide');
   }
 });
+window.addEventListener('focus', () => { void revalidateActiveSession(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void revalidateActiveSession(); });
 $('date').value = today(); $('flexDate').value = today(); $('payoutDate').value = today(); setTab('home');
 guard(async () => { try { await init(); } finally {
   $('loading').classList.add('hide');
