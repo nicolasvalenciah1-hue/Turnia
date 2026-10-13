@@ -7,6 +7,7 @@ const page=fs.readFileSync(__dirname+'/../dist/equipo.html','utf8');
 const code=fs.readFileSync(__dirname+'/../dist/equipo.js','utf8');
 const migration=fs.readFileSync(__dirname+'/../supabase/migrations/20261013_worker_team_self_service.sql','utf8');
 const kind=fs.readFileSync(__dirname+'/../supabase/migrations/20261013_worker_team_kind.sql','utf8');
+const signupGateway=fs.readFileSync(__dirname+'/../supabase/migrations/20261013_worker_team_auth_signup_fix.sql','utf8');
 function createTeamPage({confirmed=false,keepSession=true}={}){
   const dom=new JSDOM(page,{url:'https://turnia.test/equipo.html',runScripts:'outside-only'});
   const w=dom.window, d=w.document, calls=[];
@@ -36,6 +37,14 @@ function createTeamPage({confirmed=false,keepSession=true}={}){
   assert.match(migration,/revoke all on function public\.turnia_create_worker_team\(text\) from public, anon, authenticated/);
   assert.match(migration,/grant execute on function public\.turnia_create_worker_team\(text\) to authenticated/);
   assert.match(kind,/propina_private\.can_read_restaurant/);
+  assert.match(signupGateway,/CREATE OR REPLACE FUNCTION propina_private\.valid_worker_team_signup/);
+  assert.match(signupGateway,/CREATE OR REPLACE FUNCTION public\.propina_before_user_created/);
+  assert.match(signupGateway,/CREATE OR REPLACE FUNCTION propina_private\.validate_new_user/);
+  assert.match(signupGateway,/meta->>'turnia_team_setup' = 'v1'/);
+  assert.match(signupGateway,/meta->>'propina_invitation' IS NULL/);
+  assert.match(signupGateway,/meta->>'turnia_registration' IS NULL/);
+  assert.match(signupGateway,/propina_private\.test_signup_allowed/);
+  assert.match(signupGateway,/propina_private\.valid_self_registration/);
   assert.match(page,/Beta gratuita/);
   assert(!code.includes('RESEND_API_KEY') && !code.includes('SERVICE_ROLE_KEY'),'No secrets exposed');
   assert(!code.includes('createSubscription') && !code.includes('mercadopago'),'No client payment mechanism');
