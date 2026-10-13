@@ -761,6 +761,16 @@ function renderHome() {
   byDate.forEach((amount,date)=>recent.push({date,amount,flex:true}));
   recent.sort((a,b)=>b.date.localeCompare(a.date));
   $('recentDays').innerHTML=recent.slice(0,4).map(d=>'<tr><td>'+safe(dateLabel(d.date))+(d.flex?' · Por turnos':'')+'</td><td class="money">'+clp(d.amount)+'</td><td><button class="ghost small" '+(d.flex?'data-open-flex-date':'data-open-date')+'="'+safe(d.date)+'" aria-label="Ver reparto">→</button></td></tr>').join('')||emptyRow(3,'<strong>Tu próxima jornada empieza aquí</strong>Cuando guardes un día, lo encontrarás en este espacio.');
+  $('recentDaysMobile').innerHTML=recent.slice(0,4).map(d=>{
+    const participants=new Set((d.flex?flexPayouts.filter(p=>p.work_date===d.date):payouts.filter(p=>p.work_date===d.date))
+      .map(p=>p.worker_id||p.worker_name));
+    return '<button type="button" class="recent-day-card" '+(d.flex?'data-open-flex-date':'data-open-date')+'="'+safe(d.date)+
+    '" aria-label="Ver propinas del '+safe(dateLabel(d.date))+'"><span class="recent-day-date">'+safe(d.date.slice(8))+
+    '<small>'+safe(new Date(d.date+'T12:00:00').toLocaleDateString('es-CL',{month:'short'}))+'</small></span>'+
+    '<span class="recent-day-copy"><strong>'+safe(dateLabel(d.date))+'</strong><small>'+
+    (participants.size?participants.size+' persona(s) · ':'')+(d.flex?'Turnos AM/PM':'Jornada completa')+'</small></span>'+
+    '<span class="recent-day-money">'+clp(d.amount)+'</span><span class="recent-day-chevron" aria-hidden="true">›</span></button>';
+  }).join('')||'<p class="muted">Tus próximas jornadas aparecerán aquí.</p>';
 }
 function renderMembershipCard(item) {
   if (!item) { $('membershipCard').innerHTML = '<h2>Membresía del restaurante</h2><p class="muted">' + (rid ? 'No hay información de membresía disponible para este local.' : 'Selecciona o crea un restaurante para consultar su acceso.') + '</p><span class="badge gray">Cobros desactivados</span>'; return; }
@@ -1342,7 +1352,7 @@ function openPayout(e) {
   const el = e.target.closest('[data-open-date]'); if (!el) return;
   $('payoutDate').value = el.dataset.openDate; renderPayouts(); setTab('distribution');
 }
-$('historyRows').onclick = openPayout; $('recentDays').onclick = openPayout;
+$('historyRows').onclick = openPayout; $('recentDays').onclick = openPayout; $('recentDaysMobile').onclick = openPayout;
 function csvCell(value) {
   const text = String(value ?? '');
   // Prevent spreadsheet formulas in customer-provided names.
