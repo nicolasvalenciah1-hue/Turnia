@@ -1,5 +1,5 @@
 // Network-first shell. Auth redirects, API responses and customer data are never cached.
-const CACHE = 'turnia-shell-v10';
+const CACHE = 'turnia-shell-v11';
 const ASSETS = ['app.js', 'weekly-excel.js', 'styles.css', 'manifest.webmanifest', 'icon.svg'];
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil(
