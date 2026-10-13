@@ -25,6 +25,7 @@ let flexShifts = [], flexPayouts = [];
 let restaurantBusiness = {}, restaurantBusinessFor = '', inviteError = '';
 let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = false;
 let guideIndex = 0, guideDone = false, tourDismissed = false;
+let selectedHistoryMonday = '';
 let authVersion = 0, teamVersion = 0, platformVersion = 0;
 let teamMembers = [], teamInvitations = [], platformRestaurants = [], platformInvitations = [];
 let supportTickets = [], ownerSupportTickets = [], selectedSupportTicket = null, supportVersion = 0, ownerSupportVersion = 0;
@@ -216,7 +217,7 @@ function resetData() {
   $('myTipsFrom').value = ''; $('myTipsTo').value = '';
   $('myTipsStatus').textContent = '';
   $('inviteResult').textContent = ''; $('staffInviteResult').textContent = '';
-  $('historyFrom').value = ''; $('historyTo').value = '';
+  selectedHistoryMonday = '';
   render(); renderMembershipCard(null);
   teamVersion++; teamMembers = []; teamInvitations = [];
   $('teamMembers').innerHTML = ''; $('teamInvitations').innerHTML = ''; $('teamStatus').textContent = ''; renderWorkerOptions();
@@ -526,44 +527,130 @@ function renderPayouts() {
   }).join('') || emptyRow(6,'Registra una jornada o selecciona otra fecha para ver su reparto.');
   $('editDay').disabled = !day;
 }
-function visibleHistory() {
-  const from = $('historyFrom').value, to = $('historyTo').value;
-  // One history row per calendar date, regardless of how many shifts were saved.
-  // Keep the underlying shift records untouched for the detailed breakdown.
-  const grouped = new Map();
-  const dayFor = date => {
-    if (!grouped.has(date)) grouped.set(date, {date,amount:0,day:null,flexShifts:[]});
+
+function localDateOffset(iso,delta) {
+  const date=new Date(iso+'T12:00:00');
+  if(!Number.isFinite(date.getTime()))return today();
+  date.setDate(date.getDate()+delta);
+  return [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
+}
+function weekMonday(iso) {
+  const d=new Date(iso+'T12:00:00');
+  if(!Number.isFinite(d.getTime()))return weekMonday(today());
+  return localDateOffset(iso,-(d.getDay()+6)%7);
+}
+function weekSunday(monday){return localDateOffset(monday,6);}
+function weekDescription(monday) {
+  return 'Lun '+dateLabel(monday)+' — Dom '+dateLabel(weekSunday(monday));
+}
+function allHistoryDays() {
+  // Every calendar date appears exactly once, including dates with AM and PM.
+  const grouped=new Map();
+  const get=date=>{
+    if(!grouped.has(date))grouped.set(date,{date,amount:0,day:null,flexShifts:[]});
     return grouped.get(date);
   };
-  days.forEach(d => {
-    const record = dayFor(d.work_date);
-    record.day = d;
-    record.amount += Number(d.amount_clp);
-  });
-  flexShifts.forEach(s => {
-    const record = dayFor(s.work_date);
-    record.flexShifts.push(s);
-    record.amount += Number(s.amount_clp);
-  });
-  return [...grouped.values()].filter(d => (!from || d.date >= from) && (!to || d.date <= to))
-    .sort((a,b) => b.date.localeCompare(a.date));
+  for(const d of days){const entry=get(d.work_date);entry.day=d;entry.amount+=Number(d.amount_clp);}
+  for(const s of flexShifts){const entry=get(s.work_date);entry.flexShifts.push(s);entry.amount+=Number(s.amount_clp);}
+  return [...grouped.values()].sort((a,b)=>b.date.localeCompare(a.date));
+}
+function chosenHistoryWeek() {
+  if(selectedHistoryMonday)return selectedHistoryMonday;
+  const all=allHistoryDays(),current=weekMonday(today());
+  return all.some(d=>weekMonday(d.date)===current)?current:all.length?weekMonday(all[0].date):current;
+}
+function visibleHistory() {
+  const start=chosenHistoryWeek(),end=weekSunday(start);
+  return allHistoryDays().filter(d=>d.date>=start&&d.date<=end);
+}
+function weeklySettlement() {
+  const from=chosenHistoryWeek(),to=weekSunday(from),dates=Array.from({length:7},(_,i)=>localDateOffset(from,i));
+  const recorded=visibleHistory(),validIds=new Set(recorded.filter(d=>d.day).map(d=>d.day.id));
+  const activeDates=new Set(recorded.filter(d=>d.flexShifts.length).map(d=>d.date));
+  const details=[];
+  for(const p of payouts.filter(row=>validIds.has(row.day_id))) {
+    const day=recorded.find(d=>d.day?.id===p.day_id)?.day;
+    const entry=shifts.find(s=>s.day_id===p.day_id&&s.worker_id===p.worker_id);
+    const participation=Number(entry?.participation??1);
+    details.push({date:p.work_date,area_id:p.area_id||areas.find(a=>a.name===p.area_name)?.id||p.area_name,
+      area_name:p.area_name,worker_id:p.worker_id||'',
+      worker_name:p.worker_name,kind:'Jornada completa',turno:'Día',hours:Number(p.hours),
+      participation:participation*100,points:day?.hours_per_shift?Number(p.hours)*participation/Number(day.hours_per_shift):null,
+      amount:Number(p.calculated_clp)});
+  }
+  // Flex payout 'DIA' is one daily pool, and must NOT be counted once per AM/PM shift.
+  for(const p of flexPayouts.filter(row=>activeDates.has(row.work_date))) {
+    details.push({date:p.work_date,area_id:p.area_id||areas.find(a=>a.name===p.area_name)?.id||p.area_name,
+      area_name:p.area_name,worker_id:p.worker_id||'',worker_name:p.worker_name,
+      kind:'AM/PM',turno:p.group_code==='DIA'?'Fondo diario':p.group_code,
+      hours:null,participation:Number(p.weight)*100,points:Number(p.weight),
+      amount:Number(p.calculated_clp)});
+  }
+  const people=new Map(),areaTotals=new Map();
+  for(const item of details){
+    const key=String(item.area_id)+'|'+(item.worker_id||'nombre:'+item.worker_name);
+    if(!people.has(key))people.set(key,{key,area_id:item.area_id,area:item.area_name,
+      worker_id:item.worker_id,name:item.worker_name,total:0,perDay:new Map(),dates:new Set()});
+    const person=people.get(key);
+    person.total+=item.amount;person.perDay.set(item.date,(person.perDay.get(item.date)||0)+item.amount);
+    person.dates.add(item.date);
+    const areaKey=String(item.area_id);
+    if(!areaTotals.has(areaKey))areaTotals.set(areaKey,{area_id:item.area_id,name:item.area_name,total:0,workers:new Set(),dates:new Set()});
+    const area=areaTotals.get(areaKey);
+    area.total+=item.amount;area.workers.add(key);area.dates.add(item.date);
+  }
+  const peopleSorted=[...people.values()].sort((a,b)=>a.area.localeCompare(b.area,'es')||a.name.localeCompare(b.name,'es'));
+  const areaSorted=[...areaTotals.values()].sort((a,b)=>a.name.localeCompare(b.name,'es'));
+  const amount=recorded.reduce((sum,d)=>sum+d.amount,0);
+  const distributed=details.reduce((sum,d)=>sum+d.amount,0);
+  return {from,to,dates,recorded,details,people:peopleSorted,areas:areaSorted,amount,distributed,difference:amount-distributed};
 }
 function renderHistory() {
-  const data = visibleHistory();
-  $('historyRows').innerHTML = data.map(d => {
-    const flexible = d.flexShifts.length > 0;
-    const classicDistributed = d.day ? payouts.filter(p => p.day_id === d.day.id).reduce((n,p) => n + Number(p.calculated_clp),0) : 0;
-    const flexDistributed = flexible ? flexPayouts.filter(p => p.work_date === d.date).reduce((n,p) => n + Number(p.calculated_clp),0) : 0;
-    const modality = flexible && d.day ? 'Revisar modalidades' : flexible ? 'Por turnos' : 'Jornada completa';
-    const detail = flexible
-      ? `data-open-flex-date="${safe(d.date)}"`
-      : `data-open-date="${safe(d.date)}"`;
-    return `<tr><td>${safe(dateLabel(d.date))}</td><td>${modality}</td><td class="money">${clp(d.amount)}</td><td class="money">${clp(classicDistributed+flexDistributed)}</td><td><button class="ghost small" ${detail}>Ver reparto →</button></td></tr>`;
-  }).join('') || emptyRow(5,'No hay registros de propinas en este período.');
-  const invalid = $('historyFrom').value && $('historyTo').value && $('historyFrom').value > $('historyTo').value;
-  $('historySummary').textContent = invalid ? 'La fecha inicial debe ser anterior a la fecha final.' : `${data.length} día(s) registrado(s) · ${clp(data.reduce((n,d) => n + d.amount,0))} en propinas. Cada día aparece una sola vez; abre el reparto para ver el detalle.`;
-  $('export').disabled = !data.length;
+  const week=weeklySettlement(),data=week.recorded;
+  const available=new Set(allHistoryDays().map(d=>weekMonday(d.date)));
+  available.add(weekMonday(today()));available.add(week.from);
+  $('historyWeekSelect').innerHTML=[...available].sort((a,b)=>b.localeCompare(a)).map(start=>
+    '<option value="'+safe(start)+'" '+(start===week.from?'selected':'')+'>'+safe(weekDescription(start))+'</option>').join('');
+  $('historyWeekLabel').textContent=weekDescription(week.from);
+  const finished=week.to<today();
+  $('historyWeekStatus').textContent=finished?'Semana finalizada':'Semana en curso';
+  $('historyWeekStatus').className='badge '+(finished?'':'gray');
+  $('historyRows').innerHTML=data.map(d=>{
+    const flexible=d.flexShifts.length>0;
+    const distributed=week.details.filter(p=>p.date===d.date).reduce((sum,p)=>sum+p.amount,0);
+    const modality=flexible&&d.day?'Revisar modalidades':flexible?'Por turnos AM/PM':'Jornada completa';
+    const open=flexible?'data-open-flex-date':'data-open-date';
+    return '<tr><td>'+safe(dateLabel(d.date))+'</td><td>'+modality+'</td><td class="money">'+clp(d.amount)+
+      '</td><td class="money">'+clp(distributed)+'</td><td><button class="ghost small" '+open+'="'+safe(d.date)+'">Ver reparto →</button></td></tr>';
+  }).join('')||emptyRow(5,'No hay jornadas guardadas entre el lunes y el domingo de esta semana.');
+  $('historySummary').textContent=data.length+' día(s) registrado(s) · '+clp(week.amount)+' en propinas. Las transferencias bancarias no se confirman automáticamente.';
+  $('weeklyStats').innerHTML=[
+    ['Propinas de la semana',week.amount],['Distribuido entre el equipo',week.distributed],['Diferencia por revisar',week.difference]
+  ].map(([name,amount])=>'<div class="weekly-kpi"><small>'+name+'</small><strong>'+clp(amount)+'</strong></div>').join('');
+  const notice=$('weeklyNotice');
+  notice.className='notice spaced '+(week.difference?'error':'info');
+  notice.textContent=!data.length?'Selecciona una semana que tenga jornadas para consultar las liquidaciones.':
+    week.difference?'Atención: el total de las jornadas y el reparto no coinciden por '+clp(Math.abs(week.difference))+'. Revisa las áreas antes de pagar.':
+    'Los montos calculados cuadran con las jornadas registradas. Este resumen NO confirma que se haya hecho ninguna transferencia.';
+  $('weeklyWorkerRows').innerHTML=week.people.map(person=>
+    '<tr><td>'+safe(person.area)+'</td><td><strong>'+safe(person.name)+'</strong></td><td>'+person.dates.size+
+    '</td><td class="money">'+clp(person.total)+'</td></tr>').join('')+
+    (week.people.length?'<tr class="weekly-total-row"><td colspan="3">TOTAL A LIQUIDAR</td><td class="money">'+clp(week.distributed)+'</td></tr>':
+      emptyRow(4,'Todavía no existen montos asignados para esta semana.'));
+  $('weeklyAreaRows').innerHTML=week.areas.map(area=>
+    '<tr><td>'+safe(area.name)+'</td><td>'+area.workers.size+'</td><td class="money">'+clp(area.total)+'</td></tr>').join('')+
+    (week.areas.length?'<tr class="weekly-total-row"><td colspan="2">TOTAL DISTRIBUIDO</td><td class="money">'+clp(week.distributed)+'</td></tr>':
+      emptyRow(3,'No hay áreas con repartos esta semana.'));
+  $('export').disabled=!week.details.length;
 }
+$('historyWeekSelect').onchange=()=>{
+  selectedHistoryMonday=weekMonday($('historyWeekSelect').value);
+  renderHistory();
+};
+$('historyPrevWeek').onclick=()=>{selectedHistoryMonday=localDateOffset(chosenHistoryWeek(),-7);renderHistory();};
+$('historyNextWeek').onclick=()=>{selectedHistoryMonday=localDateOffset(chosenHistoryWeek(),7);renderHistory();};
+$('historyCurrentWeek').onclick=()=>{selectedHistoryMonday=weekMonday(today());renderHistory();};
+
 function renderHome() {
   const month=today().slice(0,7),classic=days.filter(d=>d.work_date.startsWith(month));
   const flexible=flexShifts.filter(s=>s.work_date.startsWith(month));
