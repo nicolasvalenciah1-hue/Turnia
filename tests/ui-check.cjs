@@ -188,9 +188,9 @@ if (require.main === module) (async()=>{
   assert(!aDay.open,'Days start collapsed for a compact history');
   aDay.querySelector('summary').click();
   assert(aDay.open,'Tapping a day expands the inline distribution');
-  assert.match(aDay.querySelector('.history-day-area-list').textContent,/40\\.000/);
-  assert.match(aDay.querySelector('.history-day-area-list').textContent,/60\\.000/);
-  assert.match(aDay.querySelector('.history-day-totals').textContent,/100\\.000/);
+  assert.match(aDay.querySelector('.history-day-area-list').textContent,/40\.000/);
+  assert.match(aDay.querySelector('.history-day-area-list').textContent,/60\.000/);
+  assert.match(aDay.querySelector('.history-day-totals').textContent,/100\.000/);
   aDay.querySelector('summary').click();
   assert(!aDay.open,'Tapping the same day closes its detail');
   a.d.querySelector('#historyToggleAll').click();
@@ -379,9 +379,9 @@ if (require.main === module) (async()=>{
   const sunday=wk.d.querySelector('#historyRows [data-history-date="2026-10-11"]');
   sunday.querySelector('summary').click();
   assert(sunday.open,'Sunday inline breakdown expands');
-  assert.match(sunday.querySelector('.history-day-totals').textContent,/100\\.000/,'AM and PM total counted once');
-  assert.match(sunday.querySelector('.history-day-area-list').textContent,/65\\.000/,'Waiter receives exact area share');
-  assert.match(sunday.querySelector('.history-day-area-list').textContent,/20\\.000/,'Kitchen stays separate');
+  assert.match(sunday.querySelector('.history-day-totals').textContent,/100\.000/,'AM and PM total counted once');
+  assert.match(sunday.querySelector('.history-day-area-list').textContent,/65\.000/,'Waiter receives exact area share');
+  assert.match(sunday.querySelector('.history-day-area-list').textContent,/20\.000/,'Kitchen stays separate');
   assert.equal(sunday.querySelectorAll('.history-day-person').length,4,'One person row per worker even for daily AM/PM fund');
   sunday.querySelector('summary').click();
   assert(!sunday.open,'Sunday inline breakdown closes');
