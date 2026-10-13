@@ -161,6 +161,18 @@
 <div class="scroll"><table><thead><tr><th>Restaurante y responsable</th><th>Estado</th><th>Cuentas activas</th><th>Administrar acceso</th></tr></thead><tbody id="platformRestaurants"></tbody></table></div>
 <h3 class="spaced">Invitaciones de Turnia</h3><div class="scroll"><table><thead><tr><th>Correo</th><th>Permiso</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="platformInvitations"></tbody></table></div>
 </div>
+<div id="ownerNotificationsPanel" class="panel">
+  <div class="panel-heading"><div><h2>Notificaciones de soporte</h2><p class="muted">Seguimiento de los correos enviados por Turnia, sin salir del panel de propietario.</p></div><button id="refreshOwnerNotifications" type="button" class="secondary small">Actualizar avisos</button></div>
+  <div class="notification-summary" aria-label="Resumen de correos de soporte">
+    <div class="notification-metric"><span>Enviadas</span><strong id="ownerNotificationsSent">—</strong><small>Aceptadas por Resend</small></div>
+    <div class="notification-metric"><span>Pendientes</span><strong id="ownerNotificationsPending">—</strong><small>En cola o procesando</small></div>
+    <div class="notification-metric"><span>Fallidas</span><strong id="ownerNotificationsFailed">—</strong><small>Revisar o reintentar</small></div>
+  </div>
+  <div class="row notification-tools"><label for="ownerNotificationsFilter">Estado</label><select id="ownerNotificationsFilter"><option value="all">Todos</option><option value="sent">Enviadas</option><option value="pending">Pendientes</option><option value="failed">Fallidas</option></select><span class="muted">Últimos 50 avisos; los totales incluyen todo el historial.</span></div>
+  <p id="ownerNotificationsStatus" class="state-text" role="status" aria-live="polite">Abre el panel de propietario para consultar notificaciones.</p>
+  <div class="scroll"><table class="notifications-table"><thead><tr><th>Ticket</th><th>Restaurante y asunto</th><th>Estado del correo</th><th>Intentos</th><th>Registrado</th><th>Detalle</th></tr></thead><tbody id="ownerNotificationsRows"><tr><td colspan="6" class="empty">Sin datos cargados.</td></tr></tbody></table></div>
+  <p class="state-text">“Enviada” significa que Resend aceptó el correo; no garantiza que haya llegado a la bandeja. Las solicitudes originales siempre se conservan.</p>
+</div>
 <div id="ownerSupportPanel" class="panel">
   <div class="panel-heading"><div><h2>Solicitudes de soporte</h2><p class="muted">Reportes de todos los restaurantes, con estado y seguimiento.</p></div><button id="refreshOwnerSupport" class="secondary small" type="button">Actualizar solicitudes</button></div>
   <p id="ownerSupportStatus" class="state-text" role="status"></p>
@@ -190,4 +202,4 @@
 </section>
 <section id="guide" class="tab hide"><div class="page-heading"><div><p class="eyebrow">VAMOS PASO A PASO</p><h1>Tu primer turno en Turnia</h1><p class="muted">Todo lo que necesitas, desde el acceso hasta el primer reparto.</p></div><button id="restartGuide" class="ghost">Reiniciar guía</button></div><div class="panel"><div class="panel-heading"><div><h2>Guía de bienvenida</h2><p id="guideProgressText" class="muted"></p></div><span class="badge">10 pasos</span></div><div class="progress-track"><div id="guideProgress"></div></div><div class="guide-layout"><ol id="guideNav" class="guide-nav"></ol><div class="guide-stage"><div id="guideContent"></div><div class="guide-controls"><button id="guidePrev" class="ghost">← Anterior</button><button id="guideNext">Siguiente →</button></div></div></div></div></section>
 <footer class="footer"><span>© Turnia · Cada turno cuenta · Una creación de MUTAVIA GROUP</span><span>Acceso por invitación · Cobros desactivados</span></footer></main></div></div>
-<noscript><p>Activa JavaScript para acceder a Turnia.</p></noscript><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script><script src="weekly-excel.js?v=weekly-settlement-20261012-1"></script><script src="app.js?v=support-email-20261013-1"></script></body></html>
+<noscript><p>Activa JavaScript para acceder a Turnia.</p></noscript><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script><script src="weekly-excel.js?v=weekly-settlement-20261012-1"></script><script src="app.js?v=owner-notifications-20261013-1"></script></body></html>
