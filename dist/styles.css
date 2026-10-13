@@ -437,3 +437,6 @@
   .notification-tools select{flex:1;min-width:125px}
   .notification-tools .muted{width:100%}
 }
+
+/* Self-service worker team entry */
+.team-signup-entry{border-top:1px solid var(--line);margin-top:17px;padding-top:17px}.team-signup-entry p{font-size:12px;color:var(--muted)}.team-signup-entry small{display:block;margin-top:9px}

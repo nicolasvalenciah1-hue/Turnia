@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#14283f"><meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Crea tu equipo · Turnia</title><link rel="icon" href="icon.svg">
+<style>
+:root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#14283f;background:#f3f7f7}
+*{box-sizing:border-box}body{margin:0}a{color:#087f8c}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;max-width:1080px;margin:auto;padding:22px}
+header a{font-size:13px}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:#14283f}
+.brand img{width:43px;height:43px}.brand strong{font-size:26px;letter-spacing:-1px}
+main{max-width:1080px;margin:20px auto 80px;padding:0 22px;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,480px);gap:36px}
+h1{font-size:clamp(32px,4vw,48px);letter-spacing:-1.6px;line-height:1.12;margin:15px 0}
+p{color:#5a6b79;line-height:1.6;font-size:14px}.eyebrow{font-size:12px;color:#087f8c;font-weight:750;text-transform:uppercase;letter-spacing:.1em}
+aside{padding:30px 8px}aside ul{list-style:none;margin:34px 0;padding:0;display:grid;gap:20px}
+aside li{display:flex;align-items:center;gap:14px;font-weight:600;font-size:14px}
+aside li span{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#e0f1ef;color:#087f8c}
+.card{background:white;border:1px solid #dee7ea;border-radius:20px;padding:32px;box-shadow:0 12px 40px #14283f0b}
+.card h2{margin:0 0 10px;font-size:22px;letter-spacing:-.5px}
+label{display:block;font-size:13px;font-weight:650;margin:17px 0 7px}
+input{width:100%;padding:12px 14px;border:1px solid #cbd9dd;border-radius:10px;min-height:46px;font:inherit;color:#14283f;background:#fff}
+input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #d8a843;outline-offset:2px}
+button{font:inherit;border-radius:11px;border:1px solid #087f8c;background:#087f8c;color:#fff;font-weight:700;font-size:14px;padding:13px 16px;cursor:pointer}
+button:disabled{opacity:.65;cursor:wait}.full{width:100%;margin-top:20px}
+.secondary{background:#eff4f4;color:#14283f;border-color:#d7e3e6}
+.switch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:20px 0}.switch button{font-size:13px}
+.switch button[aria-pressed="false"]{background:#fff;color:#38516a;border-color:#dee5e6}
+.notice{padding:13px 15px;border:1px solid #cbdfe5;border-radius:12px;background:#f0f7f9;color:#25465b;font-size:13px;margin:15px 0;line-height:1.5}
+.notice.error{border-color:#e8c2bb;background:#fff1ed;color:#853f33}
+.note{font-size:12px}.check{display:flex;align-items:start;gap:10px;line-height:1.5;margin-top:18px}
+.check input{width:17px;height:17px;min-height:0;flex:none;margin:3px 0}.check span{font-size:12px;color:#465866}
+[hidden]{display:none!important}
+@media(max-width:760px){main{display:flex;flex-direction:column;gap:15px;margin-top:0}aside{padding:10px 0}aside ul{display:none}.card{padding:23px 20px}header{padding:18px}}
+</style>
+</head>
+<body>
+<header><a href="/" class="brand"><img src="icon.svg" alt=""><strong>turnia</strong></a><a href="/">Volver a iniciar sesión →</a></header>
+<main>
+<aside><div class="eyebrow">Turnia para equipos</div><h1>Las propinas claras, aunque tu restaurante todavía no use Turnia.</h1>
+<p>Crea un espacio de trabajo entre compañeros. Un coordinador registra las jornadas y comparte los repartos según las reglas que acuerde el equipo.</p>
+<ul><li><span>1</span> Crea tu cuenta y confirma el correo.</li><li><span>2</span> Ponle nombre a tu equipo.</li><li><span>3</span> Agrega garzones e invita a tus compañeros.</li></ul>
+<div class="notice"><strong>Beta gratuita:</strong> 90 días sin cobros, sin requerir autorización del dueño del restaurante. Esta herramienta no modifica los acuerdos laborales: el reparto debe ser consentido por el equipo.</div></aside>
+<div class="card">
+<div id="status" class="notice" role="status" aria-live="polite">Comprobando tu sesión…</div>
+<div id="authArea" hidden>
+<h2>Crea tu cuenta de equipo</h2><p>Solo necesitas un correo que puedas verificar.</p>
+<div class="switch"><button id="showSignup" type="button" aria-pressed="true">Crear cuenta</button><button id="showLogin" class="secondary" type="button" aria-pressed="false">Ya tengo cuenta</button></div>
+<form id="signupForm">
+<label for="fullName">Tu nombre</label><input id="fullName" autocomplete="name" maxlength="80" required placeholder="Nombre y apellido">
+<label for="teamNameSignup">Nombre del equipo</label><input id="teamNameSignup" minlength="2" maxlength="80" required placeholder="Ej. Garzones del centro">
+<label for="emailSignup">Correo electrónico</label><input id="emailSignup" type="email" autocomplete="email" required maxlength="254">
+<label for="passwordSignup">Contraseña</label><input id="passwordSignup" type="password" autocomplete="new-password" minlength="10" required>
+<label for="passwordConfirm">Repite la contraseña</label><input id="passwordConfirm" type="password" autocomplete="new-password" minlength="10" required>
+<label class="check"><input id="consentSignup" type="checkbox" required><span>Entiendo que este es un espacio de equipo, no una cuenta oficial del empleador. Confirmaré los acuerdos de reparto con mis compañeros.</span></label>
+<button class="full" type="submit">Crear cuenta y verificar correo</button></form>
+<form id="loginExisting" hidden>
+<label for="emailExisting">Correo</label><input id="emailExisting" type="email" autocomplete="username" required>
+<label for="passwordExisting">Contraseña</label><input id="passwordExisting" type="password" autocomplete="current-password" required>
+<button class="full" type="submit">Iniciar sesión y crear equipo</button></form>
+</div>
+<div id="createArea" hidden><h2>Configura tu equipo</h2><p>Ya estás identificado con el correo <strong id="currentEmail"></strong>. Te convertirás en coordinador del equipo.</p>
+<form id="teamForm"><label for="teamName">Nombre del equipo</label><input id="teamName" minlength="2" maxlength="80" required placeholder="Ej. Equipo de garzones">
+<label class="check"><input id="acceptAgreement" type="checkbox" required><span>Confirmo que este espacio es independiente del restaurante y que las reglas de distribución serán acordadas con los participantes.</span></label>
+<button id="createTeam" class="full" type="submit">Crear mi equipo gratuito →</button></form>
+<p class="note">Se creará un área “Garzones” con 100% de reparto, que podrás editar desde Turnia. Tu cuenta quedará vinculada como coordinador y primer trabajador.</p></div>
+</div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script>
+<script src="equipo.js?v=team-beta-20261013-1"></script>
+</body></html>

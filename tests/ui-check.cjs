@@ -38,6 +38,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
     if(rpcOverrides[name])return rpcOverrides[name](args);
     if(name==='propina_account_context')return {data:context};
     if(name==='turnia_notifications_access')return {data:platform};
+    if(name==='turnia_is_worker_team')return {data:false};
     if(name==='propina_accept_invitation') {
       if(redeemed)return {error:{message:'Invitación ya utilizada.'}};
       redeemed=true;context.can_create=true;
@@ -106,13 +107,13 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=owner-notifications-20261013-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=private-notifications-20261013-1'),'App asset is versioned');
+  assert(html.includes('styles.css?v=team-spaces-20261013-1'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=team-spaces-20261013-1'),'App asset is versioned');
   assert(html.includes('weekly-excel.js?v=weekly-settlement-20261012-1'),'Offline XLSX generator is loaded');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(css.includes('.classic-area-preview'),'Independent area quota preview is styled');
-  assert(sw.includes('turnia-shell-v15'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v16'),'App shell cache version bumped');
   assert(css.includes('@media(max-width:600px)'),'Mobile CSS applies to small phones');
   assert(css.includes('.summary-grid-home'),'Dashboard KPI cards use responsive layout');
   assert(css.includes('.weekly-mobile-bottom'),'Weekly Excel action has mobile sticky bar');
