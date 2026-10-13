@@ -84,6 +84,7 @@ function msg(text = '', tone = 'info') {
 }
 function errorText(e) {
   const message = e?.message || String(e);
+  if (isMissingSession(e)) return 'Tu sesión caducó. Vuelve a iniciar sesión; tus datos siguen guardados.';
   if (/Invalid login credentials/i.test(message)) return 'El correo o la contraseña no coinciden. Revísalos e inténtalo de nuevo.';
   if (/same_password/i.test(e?.code || '') || /different from the old/i.test(message)) return 'La nueva contraseña debe ser diferente de la actual.';
   if (/weak_password/i.test(e?.code || '')) return 'La contraseña no cumple los requisitos de seguridad. Usa una más larga con letras, números y símbolos.';
@@ -103,6 +104,7 @@ async function guard(fn, button) {
   if (settingsAction) { $('settingsStatus').textContent = ''; $('settingsStatus').classList.add('hide'); }
   msg();
   try { await fn(); } catch (e) {
+    if (isMissingSession(e) || sessionLost) { expireSession(); return; }
     if (settingsAction) setSettingsStatus(errorText(e), 'error');
     if (savingClassic) { $('daySaveStatus').textContent = 'No se guardó la jornada: ' + errorText(e); $('daySaveStatus').className = 'notice error spaced'; }
     msg(errorText(e), 'error');
@@ -268,6 +270,7 @@ async function init() {
   const result = check(await sb.auth.getSession());
   if (version !== authVersion) return;
   user = result.session?.user || null;
+  if (user) sessionLost = false;
   if (!user) {
     teamSpace=false; recoveryVerified=false; $('savePassword').disabled=true;
     $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
@@ -1909,6 +1912,7 @@ document.addEventListener('keydown', e => {
   }
 });
 sb.auth.onAuthStateChange(event => {
+  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') sessionLost = false;
   if (event === 'PASSWORD_RECOVERY') {
     recoveryMode = true; recoveryVerified = true;
     $('auth').classList.add('hide'); $('app').classList.add('hide'); $('loading').classList.add('hide');
