@@ -567,11 +567,22 @@ function renderAttendanceCount() {
     areaPanel.innerHTML = '<p class="muted">Ingresa las propinas y las horas de un turno para revisar los fondos de cada área.</p>';
     return;
   }
-  areaPanel.innerHTML = areas.filter(area=>Number(area.percentage)>0).map(area=>{
+  // Match the server's largest-remainder allocation across all areas.
+  // Rounding each area independently may create a +/- $1 mismatch.
+  const areaList = areas.filter(area=>Number(area.percentage)>0);
+  const quotas = areaList.map(area=>{
+    const exact = total*Number(area.percentage)/100;
+    return {id:area.id,base:Math.floor(exact),fraction:exact-Math.floor(exact)};
+  });
+  const remaining = Math.max(0,Math.min(quotas.length,total-quotas.reduce((sum,q)=>sum+q.base,0)));
+  quotas.sort((a,b)=>b.fraction-a.fraction||a.id.localeCompare(b.id));
+  const areaBudgets = new Map();
+  quotas.forEach((q,i)=>areaBudgets.set(q.id,q.base+(i<remaining?1:0)));
+  areaPanel.innerHTML = areaList.map(area=>{
     const members = chosen.filter(e => e.worker.area_id === area.id);
     const validMembers = members.filter(e => Number.isFinite(e.points) && e.points > 0);
     const sumPoints = validMembers.reduce((sum,e)=>sum+e.points,0);
-    const budget = Math.round(total * Number(area.percentage) / 100);
+    const budget = areaBudgets.get(area.id) ?? 0;
     if (sumPoints > 0) {
       const results = validMembers.map(e=>{
         const exact = budget * e.points / sumPoints;
@@ -1507,12 +1518,12 @@ bind('saveDay', async () => {
   const presentAreas = new Set(present.map(x => workers.find(w => w.id === x.worker_id)?.area_id));
   if (areas.some(a => Number(a.percentage) > 0 && !presentAreas.has(a.id))) throw Error('Cada área con porcentaje positivo necesita al menos una persona presente.');
   if (flexShifts.some(s => s.work_date === date)) throw Error('El ' + dateLabel(date) + ' ya tiene propinas AM/PM. Abre esa modalidad para revisar el reparto y evita duplicar los montos.');
-  if (days.some(d => d.work_date === date) && !window.confirm('Ya existe una jornada para esta fecha. ¿Guardar estos cambios y recalcular su reparto?')) return;
+  if (days.some(d => d.work_date === date) && !window.confirm('Ya existe una liquidación guardada para esta fecha. Si continúas, Turnia conservará la versión anterior en el historial de revisiones y generará un nuevo reparto. ¿Deseas reemplazarla?')) return;
   await call('propina_save_day',{p_restaurant:rid,p_date:date,p_amount:amount,p_shift_hours:hours_per_shift,p_workers:present});
   $('payoutDate').value = date; await load();
   const stored = days.find(d=>d.work_date===date);
   if (!stored || Number(stored.amount_clp)!==amount) throw Error('La base de datos no confirmó el monto de la jornada. Revisa el historial antes de intentarlo de nuevo.');
-  $('daySaveStatus').textContent = 'Jornada del '+dateLabel(date)+' guardada correctamente por '+clp(amount)+'.';
+  $('daySaveStatus').textContent = 'Jornada del '+dateLabel(date)+' guardada por '+clp(amount)+'. Reparto fijo y cuadrado al peso.';
   $('daySaveStatus').className = 'notice success spaced';
   if (!guideDone && guideIndex >= 4 && guideIndex <= 6) { guideIndex = 7; saveGuideProgress(); }
   setTab('distribution'); msg('Jornada del '+dateLabel(date)+' guardada: '+clp(amount)+'. Reparto calculado.','success');
