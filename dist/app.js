@@ -42,7 +42,28 @@ const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000
 const dateLabel = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('es-CL', {day:'2-digit',month:'short',year:'numeric'}) : '—';
 const safe = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const emptyRow = (n, text) => `<tr><td colspan="${n}" class="empty">${text}</td></tr>`;
-const check = r => { if (r.error) throw r.error; return r.data; };
+const isMissingSession = e => /auth session missing|authsessionmissingerror|session_not_found|refresh_token_not_found|invalid_refresh_token|invalid refresh token/i.test([e?.message,e?.name,e?.code].join(' '));
+let sessionLost = false, lastAuthCheck = 0;
+function expireSession() {
+  if (sessionLost) return;
+  sessionLost = true;
+  const email = user?.email || '';
+  // Hide cached restaurant details before attempting any network operation.
+  authVersion++; loadVersion++; context = null; user = null; rid = '';
+  resetData();
+  $('app').classList.add('hide'); $('recovery').classList.add('hide');
+  $('pendingRegistration').classList.add('hide'); $('auth').classList.remove('hide');
+  $('loading').classList.add('hide');
+  if (email) $('email').value = email;
+  $('password').value = '';
+  $('authMessage').textContent = 'Tu sesión de Turnia caducó. Inicia sesión de nuevo. Tus jornadas y propinas siguen guardadas.';
+  $('authMessage').className = 'notice error';
+  try { Promise.resolve(sb.auth.signOut({scope:'local'})).catch(()=>{}); } catch {}
+}
+const check = r => {
+  if (r.error) { if (isMissingSession(r.error)) expireSession(); throw r.error; }
+  return r.data;
+};
 const call = async (fn, args = {}) => check(await sb.rpc(fn, args));
 const query = async (table, restaurantId) => check(await sb.from(table).select('*').eq('restaurant_id', restaurantId));
 const currentRestaurant = () => context?.restaurants?.find(r => r.id === rid);
