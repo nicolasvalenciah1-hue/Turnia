@@ -440,3 +440,13 @@
 
 /* Self-service worker team entry */
 .team-signup-entry{border-top:1px solid var(--line);margin-top:17px;padding-top:17px}.team-signup-entry p{font-size:12px;color:var(--muted)}.team-signup-entry small{display:block;margin-top:9px}
+
+
+/* Non-destructive area management, mobile-first confirmation controls. */
+.area-delete-tools{padding:19px;border:1px solid #ebd9d6;border-radius:13px;background:#fffafa}
+.area-delete-tools h3{margin:0 0 8px;color:#912e2e}
+.area-delete-tools .muted{margin-bottom:17px}
+.area-delete-tools .state-text{margin:12px 0}
+.area-delete-tools button.danger{min-width:150px}
+.area-row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media(max-width:600px){.area-delete-tools{padding:16px}.area-delete-tools .grid.two{grid-template-columns:1fr}.area-delete-tools button.danger{width:100%}}

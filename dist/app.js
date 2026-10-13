@@ -148,6 +148,7 @@ function updatePermissions() {
     : 'Solo el propietario de este restaurante puede cambiar su nombre.';
   document.querySelectorAll('[data-present],[data-hours],[data-day-percent],[data-day-note],[data-day-agreed],[data-pct],[data-update-area],[data-toggle-worker]').forEach(el => el.disabled = !editing);
   busyButtons.forEach(button => { button.disabled = true; });
+  refreshAreaDeletion();
 }
 function renderAccountSettings() {
   if (!user || !context) return;
@@ -395,9 +396,46 @@ function renderStaff() {
   const total = areas.reduce((n,a) => n + Number(a.percentage), 0), correct = Math.abs(total-100) < .0001;
   $('pctStatus').textContent = `Total asignado: ${total.toLocaleString('es-CL')}% / 100%. ` + (correct ? 'Todo listo para repartir.' : 'Ajusta los porcentajes hasta sumar 100%.');
   $('pctStatus').className = 'notice spaced ' + (correct ? 'success' : 'info');
-  $('areas').innerHTML = areas.map(a => `<tr><td>${safe(a.name)}</td><td>${canEdit() ? `<input aria-label="Porcentaje de ${safe(a.name)}" data-pct="${safe(a.id)}" type="number" min="0" max="100" step="0.01" value="${Number(a.percentage)}">` : `${Number(a.percentage)}%`}</td><td>${canEdit() ? `<button class="secondary small" data-update-area="${safe(a.id)}">Guardar</button>` : ''}</td></tr>`).join('') || emptyRow(3,'<strong>Comienza con tus áreas</strong>Agrega, por ejemplo, Garzones, Cocina y Barra.');
+  $('areas').innerHTML = areas.map(a => `<tr><td>${safe(a.name)}</td><td>${canEdit() ? `<input aria-label="Porcentaje de ${safe(a.name)}" data-pct="${safe(a.id)}" type="number" min="0" max="100" step="0.01" value="${Number(a.percentage)}">` : `${Number(a.percentage)}%`}</td><td>${canEdit() ? `<div class="area-row-actions"><button type="button" class="secondary small" data-update-area="${safe(a.id)}">Guardar</button><button type="button" class="danger small" data-select-area-delete="${safe(a.id)}" aria-label="Eliminar área ${safe(a.name)}">Eliminar</button></div>` : ''}</td></tr>`).join('') || emptyRow(3,'<strong>Comienza con tus áreas</strong>Agrega, por ejemplo, Garzones, Cocina y Barra.');
   $('workerArea').innerHTML = areas.map(a => `<option value="${safe(a.id)}">${safe(a.name)}</option>`).join('') || '<option value="">Primero agrega un área</option>';
+  renderAreaDeletion();
   $('workers').innerHTML = workers.map(w => `<tr><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><span class="badge ${w.active ? '' : 'gray'}">${w.active ? 'Activo' : 'Inactivo'}</span></td><td>${canEdit() ? `<button class="ghost small" data-toggle-worker="${safe(w.id)}">${w.active ? 'Desactivar' : 'Reactivar'}</button>` : ''}</td></tr>`).join('') || emptyRow(4,'<strong>Aún no hay personas en tu equipo</strong>Agrega su nombre y el área donde trabajan.');
+}
+
+
+function areaHasSavedHistory(areaId) {
+  return payouts.some(p => p.area_id===areaId)
+    || shifts.some(s => workers.some(w => w.id===s.worker_id && w.area_id===areaId))
+    || flexShifts.some(s =>
+      (Array.isArray(s.rules) && s.rules.some(rule => rule.area_id===areaId))
+      || (Array.isArray(s.entries) && s.entries.some(entry => entry.area_id===areaId)));
+}
+function refreshAreaDeletion() {
+  const select=$('removeArea'), target=$('removeAreaTarget'), row=$('removeAreaTransferRow');
+  const chosen=areas.find(a=>a.id===select.value);
+  const members=chosen?workers.filter(w=>w.area_id===chosen.id):[];
+  const oldTarget=target.value;
+  target.innerHTML='<option value="">Selecciona un área de destino</option>'+areas.filter(a=>a.id!==chosen?.id)
+    .map(a=>'<option value="'+safe(a.id)+'">'+safe(a.name)+'</option>').join('');
+  if(areas.some(a=>a.id===oldTarget&&a.id!==chosen?.id))target.value=oldTarget;
+  row.classList.toggle('hide',!members.length);
+  let help='';
+  if(!chosen)help='Selecciona el área que deseas eliminar.';
+  else if(areas.length<=1)help='Debe quedar al menos un área en el equipo.';
+  else if(areaHasSavedHistory(chosen.id))help='Esta área tiene jornadas guardadas. No se puede eliminar porque cambiaría el historial.';
+  else if(Number(chosen.percentage)!==0)help='Primero cambia el porcentaje de esta área a 0 % y repártelo entre las demás.';
+  else if(members.length)help='Se trasladarán '+members.length+' persona(s) al área que elijas. No se borrarán sus fichas.';
+  else help='El área no tiene personas ni jornadas registradas. Puede eliminarse.';
+  $('removeAreaHelp').textContent=help;
+  $('confirmAreaDeletion').disabled=!canEdit()||loadingData||!chosen||areas.length<=1
+    ||areaHasSavedHistory(chosen.id)||Number(chosen.percentage)!==0
+    ||(members.length>0&&(!target.value||target.value===chosen.id))||!$('removeAreaConfirm').checked;
+}
+function renderAreaDeletion() {
+  const select=$('removeArea'),previous=select.value;
+  select.innerHTML='<option value="">Elige un área</option>'+areas.map(a=>'<option value="'+safe(a.id)+'">'+safe(a.name)+'</option>').join('');
+  if(areas.some(a=>a.id===previous))select.value=previous;
+  refreshAreaDeletion();
 }
 
 function setDayMode(mode) {
@@ -1415,7 +1453,28 @@ bind('addWorker', async () => {
   check(await sb.from('propina_workers').insert({restaurant_id:rid,name,area_id}));
   $('workerName').value = ''; await load(); msg('Persona agregada al equipo.','success');
 });
-$('areas').onclick = e => { const el = e.target.closest('[data-update-area]'); if (!el) return;
+$('removeArea').addEventListener('change',()=>{ $('removeAreaConfirm').checked=false; refreshAreaDeletion(); });
+$('removeAreaTarget').addEventListener('change',refreshAreaDeletion);
+$('removeAreaConfirm').addEventListener('change',refreshAreaDeletion);
+bind('confirmAreaDeletion',async()=>{
+  requireEdit();
+  const selected=areas.find(a=>a.id===$('removeArea').value);
+  if(!selected||!$('removeAreaConfirm').checked)throw Error('Confirma el área que deseas eliminar.');
+  if(areaHasSavedHistory(selected.id))throw Error('El área tiene jornadas guardadas. No se puede eliminar.');
+  if(Number(selected.percentage)!==0)throw Error('Primero ajusta el porcentaje del área a 0 %.');
+  const members=workers.filter(w=>w.area_id===selected.id);
+  const destination=members.length?$('removeAreaTarget').value:null;
+  if(members.length&&(!destination||destination===selected.id))throw Error('Selecciona un área para trasladar las personas.');
+  const result=await call('turnia_delete_unused_area',{p_area_id:selected.id,p_destination_area_id:destination});
+  $('removeAreaConfirm').checked=false;
+  $('removeArea').value='';
+  $('removeAreaTarget').value='';
+  await load();
+  msg('Área eliminada: '+(result?.name||selected.name)+'. '+(result?.moved_workers?result.moved_workers+' persona(s) trasladadas. ':'')+'El historial se conservó.','success');
+});
+$('areas').onclick = e => { const pick=e.target.closest('[data-select-area-delete]');
+  if(pick){$('removeArea').value=pick.dataset.selectAreaDelete;$('removeAreaConfirm').checked=false;refreshAreaDeletion();$('areaDeleteTools').scrollIntoView?.({behavior:'smooth',block:'nearest'});return;}
+  const el = e.target.closest('[data-update-area]'); if (!el) return;
   guard(async () => {
     requireEdit(); const id = el.dataset.updateArea, input = document.querySelector(`[data-pct="${id}"]`), percentage = Number(input.value);
     if (input.value === '' || !Number.isFinite(percentage) || percentage < 0 || percentage > 100) throw Error('Ingresa un porcentaje entre 0 y 100.');
