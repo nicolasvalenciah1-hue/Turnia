@@ -28,19 +28,30 @@ async function account({existing=false,invalid=false,owner=false}={}) {
   assert(calls.some(c=>c[0]==='update'&&c[1].data.turnia_invitation_setup===null));
   dom.window.close();
 }
-async function server({existing=false,claimError=false,smtpError=false,invalidJwt=false}={}) {
+async function server({existing=false,claimError=false,smtpError=false,invalidJwt=false,linkError=false}={}) {
   let handler;const calls=[];
   const visitor={auth:{getUser:async()=>invalidJwt?{error:{}}:{data:{user:{id:'owner'}}}},rpc:async(fn,args)=>{calls.push([fn,args]);return claimError?{error:{}}:{data:{id:'invitation',email:'stored@example.com',existing_account:existing,attempt:1}};}};
   const admin={auth:{admin:{inviteUserByEmail:async(...args)=>{calls.push(['invite',...args]);return {error:smtpError?{}:null};}},signInWithOtp:async args=>{calls.push(['otp',args]);return {error:smtpError?{}:null};}},rpc:async(fn,args)=>{calls.push([fn,args]);return {data:null};}};
   let count=0;
   const source=stripTypeScriptTypes(fs.readFileSync('supabase/functions/turnia-invite-email/index.ts','utf8').replace(/^import .*;\n/,''));
-  vm.runInNewContext(source,{createClient:()=>count++===0?visitor:admin,Response,Request,Deno:{env:{get:()=> 'configured'},serve:fn=>handler=fn}});
+  vm.runInNewContext(source,{createClient:()=>count++===0?visitor:admin,Response,Request,AbortSignal,
+    fetch:async (url,options)=>{calls.push(['second-email',url,JSON.parse(options.body)]);return {ok:!linkError,status:linkError?403:200};},
+    Deno:{env:{get:()=> 'configured'},serve:fn=>handler=fn}});
   const response=await handler(new Request('https://example.com',{method:'POST',headers:{Authorization:'Bearer user-jwt',Origin:'https://turnia-kkbm.onrender.com','Content-Type':'application/json'},body:JSON.stringify({token:'a'.repeat(64),email:'attacker@example.com'})}));
   if(invalidJwt||claimError){assert.equal(response.status,invalidJwt?401:403);assert(!calls.some(c=>['invite','otp'].includes(c[0])));return;}
   assert.equal(response.status,smtpError?502:200);
   if(existing){const otp=calls.find(c=>c[0]==='otp')[1];assert.equal(otp.email,'stored@example.com');assert.equal(otp.options.shouldCreateUser,false);}
   else{const invite=calls.find(c=>c[0]==='invite');assert.equal(invite[1],'stored@example.com');assert.equal(invite[2].data.propina_invitation,'a'.repeat(64));}
   assert.equal(calls.find(c=>c[0]==='turnia_finish_invitation_email')[1].delivered_to_smtp,!smtpError);
+  assert.equal(calls.some(c=>c[0]==='second-email'),!smtpError,'Do not send second email when primary failed');
+  if(!smtpError){
+    const sent=calls.find(c=>c[0]==='second-email')[2];
+    assert.equal(sent.to[0],'stored@example.com','Only email the authorized stored recipient');
+    assert(sent.html.includes('https://turnia-kkbm.onrender.com/'),'Visible app URL in email');
+    assert(sent.html.includes('a'.repeat(64)),'Invitation code in email');
+    const result=await response.json();
+    assert.equal(result.app_link_email,linkError?'failed':'sent','Secondary failure leaves original confirmation successful');
+  }
 }
 async function automaticEmail() {
   const {app}=require('./ui-check.cjs');
@@ -61,4 +72,4 @@ async function automaticEmail() {
   assert.equal(sent[2][1].body.token,invite.token);
   a.dom.window.close();
 }
-(async()=>{await account();await account({owner:true});await account({existing:true});await account({invalid:true});await server();await server({existing:true});await server({smtpError:true});await server({claimError:true});await server({invalidJwt:true});await automaticEmail();console.log('PASS: automatic invitation email, same-code retry, code/password validation, existing account, authorized destination, SMTP failure and invalid session. Simulated email; no real messages sent.');})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{await account();await account({owner:true});await account({existing:true});await account({invalid:true});await server();await server({existing:true});await server({smtpError:true});await server({linkError:true});await server({claimError:true});await server({invalidJwt:true});await automaticEmail();console.log('PASS: automatic invitation email, same-code retry, code/password validation, existing account, authorized destination, SMTP failure and invalid session. Simulated email; no real messages sent.');})().catch(e=>{console.error(e);process.exitCode=1;});
