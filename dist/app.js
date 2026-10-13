@@ -31,6 +31,7 @@ let authVersion = 0, teamVersion = 0, platformVersion = 0;
 let teamMembers = [], teamInvitations = [], platformRestaurants = [], platformInvitations = [];
 let supportTickets = [], ownerSupportTickets = [], selectedSupportTicket = null, supportVersion = 0, ownerSupportVersion = 0;
 let ownerNotificationItems = [], ownerNotificationVersion = 0, notificationsAuthorized = false;
+let teamSpace = false;
 const canViewNotifications = () => !!context?.platform_admin && notificationsAuthorized;
 const busyButtons = new Set();
 const clp = n => new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP', maximumFractionDigits:0}).format(Number(n) || 0);
@@ -125,6 +126,7 @@ function updatePermissions() {
   $('myTipsNav').classList.toggle('hide', !hasWorkerLink());
   $('viewGlobalTips').classList.toggle('hide', !rid || personalOnly());
   $('membershipCard').classList.toggle('hide', personalOnly());
+  $('teamBetaHelp').classList.toggle('hide', !teamSpace);
   ['home','daily','distribution','history','staff','guide'].forEach(name => {
     document.querySelector(`[data-tab="${name}"]`).classList.toggle('hide', personalOnly());
   });
@@ -136,7 +138,7 @@ function updatePermissions() {
   $('sendSupportTicket').disabled = !rid;
   $('adminPanel').classList.toggle('hide', !context?.platform_admin);
   const restaurantOwner = !!rid && currentRestaurant()?.role === 'owner';
-  $('restaurantDetailsPanel').classList.toggle('hide', !rid);
+  $('restaurantDetailsPanel').classList.toggle('hide', !rid || teamSpace);
   $('restaurantEditName').disabled = !restaurantOwner;
   $('saveRestaurantDetails').disabled = !restaurantOwner || restaurantBusinessFor!==rid;
   $('restaurantBusinessFields').classList.toggle('hide', !restaurantOwner);
@@ -233,6 +235,7 @@ async function init() {
   if (version !== authVersion) return;
   user = result.session?.user || null;
   if (!user) {
+    teamSpace=false;
     $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
     context = null; rid = ''; loadVersion++; resetData();
     $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('sandboxCheckoutPanel').classList.add('hide'); $('auth').classList.remove('hide'); $('loading').classList.add('hide');
@@ -298,14 +301,20 @@ async function init() {
   $('pendingRegistration').classList.add('hide');
   const list = context.restaurants || [];
   rid = list.some(r => r.id === rid) ? rid : list[0]?.id || '';
+  teamSpace=false;
+  if (rid) {
+    try { teamSpace=(await call('turnia_is_worker_team',{p_workspace_id:rid}))===true; }
+    catch { teamSpace=false; }
+    if(version!==authVersion)return;
+  }
   $('restaurant').innerHTML = list.length ? list.map(r => `<option value="${safe(r.id)}">${safe(r.name)}</option>`).join('') : '<option value="">Sin restaurante autorizado</option>';
   $('restaurant').value = rid;
   $('account').textContent = user.email;
   const name = context.display_name || user.email;
   $('profileName').textContent = name;
-  $('profileRole').textContent = context.platform_admin ? 'MUTAVIA GROUP · Creador de Turnia' : roleLabel(currentRestaurant()?.role);
+  $('profileRole').textContent = context.platform_admin ? 'MUTAVIA GROUP · Creador de Turnia' : teamSpace && currentRestaurant()?.role==='owner' ? 'Coordinador del equipo' : teamSpace ? 'Integrante del equipo' : roleLabel(currentRestaurant()?.role);
   renderAccountSettings();
-  if (rid && currentRestaurant()?.role === 'owner') void loadRestaurantBusiness(rid);
+  if (rid && !teamSpace && currentRestaurant()?.role === 'owner') void loadRestaurantBusiness(rid);
   $('avatar').textContent = context.platform_admin ? 'M' : name.split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase();
   $('greeting').textContent = context.platform_admin ? 'Hola, Nicolás.' : 'Tu equipo. Cada turno.';
   $('todayLabel').textContent = new Date().toLocaleDateString('es-CL', {weekday:'long',day:'numeric',month:'long'});
@@ -849,8 +858,8 @@ function renderHome() {
   }).join('')||'<p class="muted">Tus próximas jornadas aparecerán aquí.</p>';
 }
 function renderMembershipCard(item) {
-  if (!item) { $('membershipCard').innerHTML = '<h2>Membresía del restaurante</h2><p class="muted">' + (rid ? 'No hay información de membresía disponible para este local.' : 'Selecciona o crea un restaurante para consultar su acceso.') + '</p><span class="badge gray">Cobros desactivados</span>'; return; }
-  const labels = {active:'Membresía activa',expiring:'Próxima a vencer',expired:'Membresía vencida',payment_pending:'Pendiente de habilitación'};
+  if (!item) { $('membershipCard').innerHTML = '<h2>'+(teamSpace?'Prueba del equipo':'Membresía del restaurante')+'</h2><p class="muted">' + (rid ? 'No hay información de acceso disponible para este espacio.' : 'Selecciona un espacio para consultar su acceso.') + '</p><span class="badge gray">Cobros desactivados</span>'; return; }
+  const labels = teamSpace ? {active:'Prueba gratuita del equipo',expiring:'Prueba próxima a vencer',expired:'Prueba finalizada',payment_pending:'Acceso pendiente'} : {active:'Membresía activa',expiring:'Próxima a vencer',expired:'Membresía vencida',payment_pending:'Pendiente de habilitación'};
   const pay = {trial:'Período de prueba',paid:'Registrada como pagada',pending:'Pendiente'};
   $('membershipCard').innerHTML = `<div class="panel-heading"><div><h2>${safe(labels[item.status] || 'Membresía')}</h2><p class="muted">${safe(pay[item.payment_status] || item.payment_status || '')}</p></div><span class="badge ${['expired','payment_pending'].includes(item.status) ? 'gold' : ''}">${Number(item.days_remaining) || 0} días restantes</span></div><p>Vence: <strong>${safe(item.expires_at ? new Date(item.expires_at).toLocaleDateString('es-CL') : '—')}</strong></p><p class="muted">Responsable: ${safe(item.responsible_email || 'No definido')}</p><div class="notice info">Los cobros están desactivados. Para revisar tu acceso o renovar, contacta al propietario de Turnia.</div><button class="secondary" data-go="guide">Abrir guía de uso →</button>`;
 }
@@ -1346,11 +1355,17 @@ bind('sandboxPay', async () => {
  }
 });
 $('restaurant').onchange = () => guard(async () => {
-  rid = $('restaurant').value; loadVersion++; resetData(); renderAccountSettings();
-  if(currentRestaurant()?.role==='owner')void loadRestaurantBusiness(rid);
+  rid = $('restaurant').value; loadVersion++; teamSpace=false;
+  const selected=rid, changeVersion=loadVersion;
+  if(selected){
+    try { teamSpace=(await call('turnia_is_worker_team',{p_workspace_id:selected}))===true; } catch { teamSpace=false; }
+    if(selected!==rid || changeVersion!==loadVersion)return;
+  }
+  resetData(); renderAccountSettings();
+  if(!teamSpace && currentRestaurant()?.role==='owner')void loadRestaurantBusiness(rid);
   if (tab === 'access') void loadTeam();
   if (tab === 'support') void loadSupport();
-  $('profileRole').textContent = context?.platform_admin ? 'MUTAVIA GROUP · Creador de Turnia' : roleLabel(currentRestaurant()?.role);
+  $('profileRole').textContent = context?.platform_admin ? 'MUTAVIA GROUP · Creador de Turnia' : teamSpace && currentRestaurant()?.role==='owner' ? 'Coordinador del equipo' : teamSpace ? 'Integrante del equipo' : roleLabel(currentRestaurant()?.role);
   setTab(personalOnly() ? 'mytips' : tab === 'mytips' && !hasWorkerLink() ? 'home' : tab);
   await load();
 });
