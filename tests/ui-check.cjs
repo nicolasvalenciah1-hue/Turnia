@@ -439,7 +439,8 @@ if (require.main === module) (async()=>{
   assert.match(row.textContent,/Por turnos/,'History labels the distribution method, not individual shifts');
   assert(!/Turno AM|Turno PM/.test(row.textContent),'History does not split AM and PM');
   assert.match(row.textContent,/2\.000/,'History totals AM and PM');
-  assert.match(flex.d.querySelector('#historySummary').textContent,/2 día\(s\)/,'History counts dates, not shifts');
+  assert.match(flex.d.querySelector('#historySummary').textContent,/1 día\(s\)/,'History counts only dates within the selected Monday-Sunday week');
+  assert(flex.d.querySelector('#historyWeekSelect').textContent.includes('28 sept'),'Earlier classic day is kept in its own previous week');
   flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]').click();
   assert.equal(flex.d.querySelector('#flexDate').value,'2026-10-09');
   assert.equal(flex.d.querySelector('#dayEntryMode').value,'flex','Unified history opens saved AM/PM mode');
