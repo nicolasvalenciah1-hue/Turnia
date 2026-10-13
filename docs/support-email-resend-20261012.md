@@ -13,7 +13,7 @@
 - Instalado en el proyecto Supabase existente: `public.turnia_support_email_outbox`, RLS activa, cero permisos para `anon`/`authenticated`, trigger `turnia_support_email_enqueue` activo.
 - La cola empezó con 0 eventos para no reenviar correos de tickets históricos. El ticket de soporte existente se conservó.
 - Edge Function `turnia-support-notify` desplegada en versión 1, estado ACTIVE, `verify_jwt=true`.
-- PR #34 sigue abierto; Render continúa publicando `main`. **Aún no hay envío real confirmado ni credenciales Resend verificadas.**
+- El PR #34 quedó desactualizado por cambios posteriores de interfaz; su reemplazo se desarrolla sobre la rama principal actual para preservar las mejoras móviles y del historial semanal. **Ya se guardaron los secretos de Resend en Supabase, pero todavía falta comprobar un envío real y la recepción en Gmail.**
 - GitHub Actions pasó los controles de sintaxis, interfaz y notificación; son pruebas simuladas/estáticas, no entregas de email.
 - Limitación pendiente: si se cierra el navegador tras guardar el ticket, la fila sigue en la cola, pero no hay un procesador automático de pendientes. La solución completa debe añadir un worker programado con credencial guardada en Vault, sin exponerla al cliente.
 
@@ -25,7 +25,7 @@
    - `RESEND_API_KEY`: valor privado generado en Resend
    - `TURNIA_SUPPORT_FROM`: `Turnia <soporte@dominio-verificado.cl>` o, solo en pruebas autorizadas, `Turnia <onboarding@resend.dev>`
    - `TURNIA_SUPPORT_NOTIFY_TO`: `turnia.notificaciones@gmail.com`
-5. **Función desplegada y verificada.** No fusionar el PR ni publicar el frontend hasta configurar el proveedor, verificar destinatario/remitente y completar una prueba autorizada.
+5. **Función desplegada y verificada.** Credenciales y remitente configurados. Tras superar CI, publicar el frontend para ejecutar una prueba real con un ticket nuevo y verificar la recepción; si falla, revertir el cambio de frontend conservando los tickets.
 6. Desde una cuenta válida de restaurante, crear **un ticket nuevo** y revisar que la interfaz indique `Aviso aceptado por el servicio de correo`. Comprobar la recepción real en la bandeja Gmail, así como envíos y errores en Resend.
 7. Revisar el registro de cola en Supabase (lectura administrativa):
 ```sql
