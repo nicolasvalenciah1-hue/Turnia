@@ -22,6 +22,8 @@ if (!window.supabase) {
 const sb = window.supabase.createClient(SUPABASE_URL, 'sb_publishable_uT_FeTqwfX8AhkUtgmo--Q_bemTQkwP', {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: sessionStorageBackend }
 });
+let specialClosures=[],specialRows=[];
+const specialDrafts=new Map();
 let context = null, user = null, rid = '', areas = [], workers = [], days = [], shifts = [], payouts = [];
 let myTips = [], myTipsLoaded = false;
 let flexShifts = [], flexPayouts = [];
@@ -258,6 +260,7 @@ function setSettingsStatus(text, kind = 'success') {
   target.className = 'notice '+kind;
 }
 function resetData() {
+  specialClosures=[];specialRows=[];specialDrafts.clear();
   areas = []; workers = []; days = []; shifts = []; payouts = []; flexShifts = []; flexPayouts = []; restaurantBusiness = {}; restaurantBusinessFor = ''; membershipContext = []; myTips = []; myTipsLoaded = false;
   supportVersion++; supportTickets=[]; selectedSupportTicket=null;
   $('supportTickets').innerHTML=''; $('supportThread').classList.add('hide');
@@ -417,15 +420,16 @@ async function load() {
   const version = ++loadVersion, selectedId = rid;
   loadingData = true; updatePermissions();
   myTips = []; myTipsLoaded = false; renderMyTips();
-  if (personalOnly()) { areas = []; workers = []; days = []; shifts = []; payouts = []; flexShifts = []; flexPayouts = []; membershipContext = []; render(); }
+  if (personalOnly()) { specialClosures=[];specialRows=[];specialDrafts.clear();areas = []; workers = []; days = []; shifts = []; payouts = []; flexShifts = []; flexPayouts = []; membershipContext = []; render(); }
   try {
     if (personalOnly()) {
       await loadMyTips(version, selectedId);
       return;
     }
-    const data = await Promise.all(['propina_areas','propina_workers','propina_days','propina_shifts','propina_daily_distribution','propina_flex_shifts','propina_flex_payouts'].map(t => query(t, selectedId)));
+    const data = await Promise.all(['propina_areas','propina_workers','propina_days','propina_shifts','propina_daily_distribution','propina_flex_shifts','propina_flex_payouts','turnia_tip_closures','turnia_special_allocations'].map(t => query(t, selectedId)));
     if (version !== loadVersion || selectedId !== rid) return;
-    [areas,workers,days,shifts,payouts,flexShifts,flexPayouts] = data;
+    [areas,workers,days,shifts,payouts,flexShifts,flexPayouts,specialClosures,specialRows] = data;
+    specialClosures ||= []; specialRows ||= [];
     areas.sort((a,b) => a.name.localeCompare(b.name,'es'));
     workers.sort((a,b) => a.name.localeCompare(b.name,'es'));
     days.sort((a,b) => b.work_date.localeCompare(a.work_date));
@@ -483,6 +487,67 @@ function renderAreaDeletion() {
   refreshAreaDeletion();
 }
 
+function specialClosure(date,scope){return specialClosures.find(c=>c.work_date===date&&c.scope===scope);}
+function specialDate(scope){return $(scope==='DAY'?'date':'flexDate').value;}
+function specialDraft(scope){
+ const date=specialDate(scope),saved=specialClosure(date,scope),key=rid+'|'+date+'|'+scope+'|'+(saved?.revision||0);
+ if(!specialDrafts.has(key))specialDrafts.set(key,{tips:JSON.parse(JSON.stringify(saved?.payload?.tips||[])),revision:saved?.revision||0,request:null});
+ return specialDrafts.get(key);
+}
+function renderSpecialEditor(scope){
+ const box=$(scope==='DAY'?'specialDAY':'specialFLEX');if(!box)return;
+ const draft=specialDraft(scope),date=specialDate(scope);
+ const legacy=scope==='DAY'?days.some(d=>d.work_date===date):flexShifts.some(d=>d.work_date===date&&d.shift_code===scope);
+ if(legacy&&!specialClosure(date,scope)){box.innerHTML='<p>Registro histórico: las propinas especiales solo se incorporan en nuevos cierres.</p>';return;}
+ if(!canEdit()){box.innerHTML='';return;}
+ box.innerHTML='<h3>Propinas especiales</h3><p>Incluye en el monto de caja todas las propinas, también las adicionales. Turnia separará estas últimas antes del reparto general.</p>'+
+ '<label>Monto adicional (CLP)<input data-special-amount type="number" min="1" step="1"></label><label>Medio<select data-special-payment><option value="debito">Débito</option><option value="credito">Crédito</option><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select></label>'+
+ '<label>Comprobante o referencia única<input data-special-reference maxlength="120" placeholder="Ej.: fecha + terminal + operación"></label><label>Distribución<select data-special-method><option value="equal">Partes iguales</option><option value="custom">Montos personalizados</option></select></label>'+
+ '<div>'+workers.filter(w=>w.active).map(w=>'<label class="check"><input type="checkbox" data-special-worker="'+safe(w.id)+'">'+safe(w.name)+'<input type="number" min="1" step="1" data-special-custom="'+safe(w.id)+'" aria-label="Monto personalizado de '+safe(w.name)+'" placeholder="Monto personalizado"></label>').join('')+'</div>'+
+ '<button type="button" class="secondary" data-special-add>Agregar propina</button><div data-special-list></div><p data-special-total role="status"></p>'+
+ '<label class="check"><input type="checkbox" data-special-confirm>Confirmo que revisé las propinas especiales y que el total coincide con las propinas de caja, sin duplicarlas.</label>'+
+ (draft.revision?'<label>Motivo de la corrección<input data-special-reason minlength="10" maxlength="500"></label>':'');
+ const invalidate=()=>{box.querySelector('[data-special-confirm]').checked=false;draft.request=null;};
+ const refresh=()=>{
+  box.querySelector('[data-special-list]').innerHTML=draft.tips.map((t,i)=>'<p>'+safe(t.reference)+' · '+clp(t.amount)+' · '+t.allocations.map(a=>safe(workers.find(w=>w.id===a.worker_id)?.name||a.worker_id)+': '+clp(a.amount)).join(', ')+' <button type="button" class="ghost small" data-special-remove="'+i+'">Quitar / corregir</button></p>').join('');
+  const gross=Number($(scope==='DAY'?'amount':'flexAmount').value),special=draft.tips.reduce((n,t)=>n+t.amount,0);
+  box.querySelector('[data-special-total]').textContent='Caja: '+clp(gross)+' − especiales: '+clp(special)+' = fondo general: '+clp(gross-special);
+ };
+ const toggleCustom=()=>box.querySelectorAll('[data-special-custom]').forEach(el=>{el.hidden=box.querySelector('[data-special-method]').value!=='custom';});
+ box.querySelector('[data-special-method]').onchange=toggleCustom;toggleCustom();
+ box.querySelector('[data-special-add]').onclick=()=>guard(async()=>{
+  requireEdit();const ids=[...box.querySelectorAll('[data-special-worker]:checked')].map(el=>el.dataset.specialWorker);
+  const amount=Number(box.querySelector('[data-special-amount]').value),method=box.querySelector('[data-special-method]').value;
+  const custom=method==='custom'?Object.fromEntries(ids.map(id=>[id,Number([...box.querySelectorAll('[data-special-custom]')].find(el=>el.dataset.specialCustom===id).value)])):null;
+  const tip={id:crypto.randomUUID(),amount,method,payment:box.querySelector('[data-special-payment]').value,reference:box.querySelector('[data-special-reference]').value.trim(),allocations:window.TurniaSpecial.allocations(amount,ids,custom)};
+  window.TurniaSpecial.reconcile(Number($(scope==='DAY'?'amount':'flexAmount').value),[...draft.tips,tip]);
+  draft.tips.push(tip);invalidate();refresh();if(scope==='DAY')renderAttendanceCount();
+ });
+ box.querySelector('[data-special-list]').onclick=e=>{const b=e.target.closest('[data-special-remove]');if(!b)return;draft.tips.splice(Number(b.dataset.specialRemove),1);invalidate();refresh();if(scope==='DAY')renderAttendanceCount();};
+ box.addEventListener('input',e=>{if(!e.target.matches('[data-special-confirm]'))invalidate();});
+ refresh();
+}
+async function closeSpecial(scope,payload){
+ const draft=specialDraft(scope),box=$(scope==='DAY'?'specialDAY':'specialFLEX');
+ const result=window.TurniaSpecial.reconcile(payload.gross,draft.tips,payload.workers.map(w=>w.worker_id));
+ if(!box.querySelector('[data-special-confirm]')?.checked)throw Error('Confirma la conciliación de propinas antes de cerrar.');
+ const reason=box.querySelector('[data-special-reason]')?.value.trim()||'';
+ if(draft.revision&&reason.length<10)throw Error('Explica la corrección en al menos 10 caracteres.');
+ payload.tips=JSON.parse(JSON.stringify(draft.tips));
+ const signature=JSON.stringify(payload);
+ if(!draft.request||draft.request.signature!==signature)draft.request={signature,id:crypto.randomUUID()};
+ await call('turnia_close_day',{p_restaurant:rid,p_date:specialDate(scope),p_scope:scope,p_payload:payload,p_expected_revision:draft.revision,p_request_id:draft.request.id,p_confirmed:true,p_reason:reason});
+ return result;
+}
+// Changing any calculation input invalidates the prior human confirmation.
+for(const [panel,scope] of [['classicDayPanel','DAY'],['flex','FLEX']])$(panel).addEventListener('input',e=>{
+ if(e.target.matches('[data-special-confirm]'))return;
+ const box=$(scope==='DAY'?'specialDAY':'specialFLEX');const confirm=box?.querySelector('[data-special-confirm]');if(confirm)confirm.checked=false;
+ const active=scope==='DAY'?'DAY':$('flexShiftCode').value;
+ const total=box?.querySelector('[data-special-total]');
+ if(total){const gross=Number($(scope==='DAY'?'amount':'flexAmount').value),special=specialDraft(active).tips.reduce((n,t)=>n+t.amount,0);total.textContent='Caja: '+clp(gross)+' − especiales: '+clp(special)+' = fondo general: '+clp(gross-special);}
+});
+
 function setDayMode(mode) {
   const flexible=mode==='flex';
   $('dayEntryMode').value=flexible?'flex':'classic';
@@ -499,7 +564,7 @@ function renderFlex() {
   const date=$('flexDate').value,shift=$('flexShiftCode').value,existing=selectedFlexShift();
   const other=flexShifts.find(s=>s.work_date===date);
   const savedModes=existing?.rules||other?.rules||[];
-  $('flexAmount').value=existing?String(existing.amount_clp):'';
+  $('flexAmount').value=existing?String(specialClosure(date,shift)?.gross_clp??existing.amount_clp):'';
   $('flexState').textContent=existing?'Turno '+shift+' guardado. Puedes editarlo.':'Turno '+shift+' aún sin registrar.';
   $('flexAreaModes').innerHTML=areas.filter(a=>Number(a.percentage)>0).map(a=>{
     const mode=savedModes.find(m=>m.area_id===a.id)?.mode||'per_shift';
@@ -510,11 +575,11 @@ function renderFlex() {
     const weight=saved?Number(saved.weight):1,percentage=Number((weight*100).toFixed(2)),note=saved?.note||'',disabled=!canEdit()?'disabled':'';
     return '<div class="flex-person"><label class="check"><input type="checkbox" data-flex-present="'+safe(w.id)+'" '+(saved?'checked':'')+' '+disabled+'><strong>'+safe(w.name)+'</strong> · '+safe(areas.find(a=>a.id===w.area_id)?.name||'')+'</label><div class="flex-person-config"><label>Participación (%)<input type="number" data-flex-percent="'+safe(w.id)+'" min="1" max="200" step="0.01" value="'+percentage+'" aria-label="Participación porcentual de '+safe(w.name)+'" '+disabled+'></label><label>Motivo del acuerdo<input data-flex-note="'+safe(w.id)+'" maxlength="300" placeholder="Motivo si las partes son distintas de 1" value="'+safe(note)+'" '+disabled+'></label><label class="check"><input type="checkbox" data-flex-agreed="'+safe(w.id)+'" '+(saved?.agreed?'checked':'')+' '+disabled+'>Acuerdo confirmado</label></div></div>';
   }).join('')||'<p class="muted">Agrega trabajadores activos para registrar un turno.</p>';
-  renderFlexResults();renderFlexHistory();updatePermissions();
+  renderSpecialEditor(shift);renderFlexResults();renderFlexHistory();updatePermissions();
 }
 function renderFlexResults() {
-  const date=$('flexDate').value,records=flexShifts.filter(s=>s.work_date===date),result=flexPayouts.filter(p=>p.work_date===date);
-  const amount=records.reduce((n,s)=>n+Number(s.amount_clp),0),paid=result.reduce((n,s)=>n+Number(s.calculated_clp),0);
+  const date=$('flexDate').value,records=flexShifts.filter(s=>s.work_date===date),result=[...flexPayouts.filter(p=>p.work_date===date),...specialRows.filter(p=>p.work_date===date&&p.scope!=='DAY').map(p=>({...p,group_code:'Especial '+p.scope,weight:0,calculated_clp:p.amount_clp}))];
+  const amount=records.reduce((n,s)=>n+Number(s.amount_clp),0)+specialRows.filter(p=>p.work_date===date&&p.scope!=='DAY').reduce((n,p)=>n+Number(p.amount_clp),0),paid=result.reduce((n,s)=>n+Number(s.calculated_clp),0);
   $('flexSummary').innerHTML=records.length?'<div><small>Total AM + PM</small><strong>'+clp(amount)+'</strong></div><div><small>Distribuido</small><strong>'+clp(paid)+'</strong></div><div><small>Diferencia</small><strong>'+clp(amount-paid)+'</strong></div>':'<p class="muted">Guarda un turno para ver su reparto.</p>';
   $('flexPayoutRows').innerHTML=result.map(p=>'<tr><td>'+safe(p.worker_name)+'</td><td>'+safe(p.area_name)+'</td><td>'+(p.group_code==='DIA'?'Fondo diario':safe(p.group_code))+'</td><td>'+Number((Number(p.weight)*100).toFixed(2))+'%</td><td class="money">'+clp(p.calculated_clp)+'</td></tr>').join('')||emptyRow(5,'Aún no hay reparto flexible para esta fecha.');
   $('flexExport').disabled=!result.length;
@@ -551,11 +616,11 @@ bind('saveFlexShift',async()=>{
   const other=flexShifts.find(s=>s.work_date===date&&s.shift_code!==shift);
   if(other&&modes.some(m=>other.rules?.some(r=>r.area_id===m.area_id&&r.mode!==m.mode)))throw Error('AM y PM deben usar el mismo método de reparto por área.');
   if(selectedFlexShift()&&!window.confirm('¿Reemplazar el turno guardado y recalcular el reparto?'))return;
-  await call('propina_save_flex_shift',{p_restaurant:rid,p_date:date,p_shift:shift,p_amount:amount,p_modes:modes,p_entries:entries});
+  await closeSpecial(shift,{gross:amount,modes,workers:entries});
   await load();setTab('flex');msg('Turno guardado y reparto actualizado.','success');
 });
 bind('flexExport',async()=>{
-  const date=$('flexDate').value,data=flexPayouts.filter(p=>p.work_date===date);
+  const date=$('flexDate').value,data=[...flexPayouts.filter(p=>p.work_date===date),...specialRows.filter(p=>p.work_date===date&&p.scope!=='DAY').map(p=>({...p,group_code:'Especial '+p.scope,weight:0,calculated_clp:p.amount_clp}))];
   if(!data.length)throw Error('No hay repartos para exportar.');
   const rows=[['Fecha','Restaurante','Turno/fondo','Trabajador','Área','Participación (%)','Propina CLP'],...data.map(p=>[p.work_date,currentRestaurant()?.name||'',p.group_code,p.worker_name,p.area_name,Number((Number(p.weight)*100).toFixed(2)),p.calculated_clp])];
   const csv='\ufeff'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
@@ -566,7 +631,7 @@ bind('flexExport',async()=>{
 
 function renderDay() {
   const current = days.find(d => d.work_date === $('date').value);
-  $('amount').value = current ? current.amount_clp : '';
+  $('amount').value = current ? (specialClosure(current.work_date,'DAY')?.gross_clp??current.amount_clp) : '';
   $('shiftHours').value = current?.hours_per_shift || $('shiftHours').value || 8;
   $('dayState').textContent = current ? 'Jornada guardada' : flexShifts.some(s=>s.work_date===$('date').value) ? 'Fecha usada en AM/PM' : 'Nueva jornada';
   $('attendance').innerHTML = workers.filter(w => w.active || current && shifts.some(s => s.day_id === current.id && s.worker_id === w.id)).map(w => {
@@ -575,7 +640,7 @@ function renderDay() {
     const note = shift?.note || '', agreed = !!shift?.agreed;
     return `<tr><td><input type="checkbox" aria-label="${safe(w.name)} trabajó" data-present="${safe(w.id)}" ${shift ? 'checked' : ''}></td><td>${safe(w.name)}</td><td>${safe(areas.find(a => a.id === w.area_id)?.name || '—')}</td><td><input aria-label="Horas de ${safe(w.name)}" type="number" data-hours="${safe(w.id)}" min="0.5" max="24" step="0.5" value="${Number(shift?.hours || $('shiftHours').value || 8)}"></td><td><input aria-label="Participación porcentual de ${safe(w.name)}" type="number" data-day-percent="${safe(w.id)}" min="1" max="200" step="0.01" value="${participation}"></td><td><strong data-day-points="${safe(w.id)}" class="point-cell">—</strong></td><td class="money"><span data-day-estimate="${safe(w.id)}">—</span></td><td><div class="classic-participation-agreement"><input aria-label="Motivo del acuerdo para ${safe(w.name)}" data-day-note="${safe(w.id)}" maxlength="300" placeholder="Motivo para menos de 100%" value="${safe(note)}"><label class="check"><input type="checkbox" data-day-agreed="${safe(w.id)}" ${agreed ? 'checked' : ''}>Acuerdo confirmado</label></div></td></tr>`;
   }).join('') || emptyRow(8,'Agrega trabajadores en Equipo y áreas para registrar una jornada.');
-  renderAttendanceCount(); updatePermissions();
+  renderSpecialEditor('DAY');renderAttendanceCount(); updatePermissions();
 }
 function classicEffectivePoints(hours, participationPercent, baseHours) {
   if (!Number.isFinite(hours) || hours <= 0 || !Number.isFinite(participationPercent) ||
@@ -584,7 +649,7 @@ function classicEffectivePoints(hours, participationPercent, baseHours) {
 }
 function renderAttendanceCount() {
   const base = Number($('shiftHours').value);
-  const total = Number($('amount').value);
+  const total = Number($('amount').value)-specialDraft('DAY').tips.reduce((n,t)=>n+t.amount,0);
   const validAmount = $('amount').value !== '' && Number.isSafeInteger(total) && total >= 0;
   const entries = workers.map(worker => {
     const wid = worker.id;
@@ -648,10 +713,13 @@ $('shiftHours').addEventListener('input',renderAttendanceCount);
 
 function renderPayouts() {
   const day = days.find(d => d.work_date === $('payoutDate').value);
-  const data = day ? payouts.filter(p => p.day_id === day.id) : [];
+  const extras=day?specialRows.filter(p=>p.work_date===day.work_date&&p.scope==='DAY'):[];
+  const gross=Number(day?.amount_clp||0)+extras.reduce((n,p)=>n+Number(p.amount_clp),0);
+  const data = day ? [...payouts.filter(p => p.day_id === day.id),...extras.map(p=>({...p,special:true,calculated_clp:p.amount_clp}))] : [];
   const assigned = data.reduce((n,p) => n + Number(p.calculated_clp), 0);
-  $('summary').innerHTML = day ? `<div><small>Total de la jornada</small><strong>${clp(day.amount_clp)}</strong></div><div><small>Distribuido</small><strong>${clp(assigned)}</strong></div><div><small>Sin asignar</small><strong>${clp(Number(day.amount_clp)-assigned)}</strong></div>` : '<p class="muted" style="margin:0">Todavía no hay una jornada guardada para esta fecha.</p>';
+  $('summary').innerHTML = day ? `<div><small>Total de la jornada</small><strong>${clp(gross)}</strong></div><div><small>Distribuido</small><strong>${clp(assigned)}</strong></div><div><small>Sin asignar</small><strong>${clp(gross-assigned)}</strong></div>` : '<p class="muted" style="margin:0">Todavía no hay una jornada guardada para esta fecha.</p>';
   $('payouts').innerHTML = data.map(p => {
+    if(p.special)return `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td colspan="3">Propina especial</td><td class="money">${clp(p.calculated_clp)}</td></tr>`;
     const shift = shifts.find(s => s.day_id === p.day_id && s.worker_id === p.worker_id);
     const percentage = Number((Number(shift?.participation ?? 1) * 100).toFixed(2));
     return `<tr><td>${safe(p.worker_name)}</td><td>${safe(p.area_name)}</td><td>${Number(p.hours)}</td><td>${percentage}%</td><td>${Number((Number(p.hours)*Number(shift?.participation??1)/Number(day?.hours_per_shift||8)).toFixed(2)).toLocaleString('es-CL')}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`;
@@ -683,6 +751,7 @@ function allHistoryDays() {
   };
   for(const d of days){const entry=get(d.work_date);entry.day=d;entry.amount+=Number(d.amount_clp);}
   for(const s of flexShifts){const entry=get(s.work_date);entry.flexShifts.push(s);entry.amount+=Number(s.amount_clp);}
+  for(const row of specialRows)get(row.work_date).amount+=Number(row.amount_clp);
   return [...grouped.values()].sort((a,b)=>b.date.localeCompare(a.date));
 }
 function chosenHistoryWeek() {
@@ -717,6 +786,7 @@ function weeklySettlement() {
       hours:null,participation:Number(p.weight)*100,points:Number(p.weight),
       amount:Number(p.calculated_clp)});
   }
+  for(const p of specialRows.filter(r=>r.work_date>=from&&r.work_date<=to))details.push({date:p.work_date,area_id:p.area_id,area_name:p.area_name,worker_id:p.worker_id,worker_name:p.worker_name,kind:'Propina especial',turno:p.scope,hours:null,participation:null,points:null,amount:Number(p.amount_clp)});
   const people=new Map(),areaTotals=new Map();
   for(const item of details){
     const key=String(item.area_id)+'|'+(item.worker_id||'nombre:'+item.worker_name);
@@ -792,7 +862,7 @@ function downloadWeeklyPerson(){
     {name:'Liquidación individual',title:'TURNIA · LIQUIDACIÓN PERSONAL',subtitle,
       note:person.name+' · '+person.area+' · Documento de cálculo, no acredita transferencia.',
       headers:['Fecha','Área','Turno','Participación %','Horas','Propina CLP'],
-      rows:entries.map(item=>[item.date,item.area_name,item.turno,Number(item.participation.toFixed(2)),item.hours??'',item.amount]),
+      rows:entries.map(item=>[item.date,item.area_name,item.turno,item.participation==null?'':Number(item.participation.toFixed(2)),item.hours??'',item.amount]),
       total:['TOTAL','','','',person.dates.size,person.total],money:[5],widths:[19,24,24,21,16,22]}
   ],'Turnia_Liquidacion_'+week.from+'_'+person.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,45)+'.xlsx');
   msg('Liquidación individual descargada. No se confirma ningún pago.','success');
@@ -944,7 +1014,7 @@ $('historyCurrentWeek').onclick=()=>{selectedHistoryMonday=weekMonday(today());s
 function renderHome() {
   const month=today().slice(0,7),classic=days.filter(d=>d.work_date.startsWith(month));
   const flexible=flexShifts.filter(s=>s.work_date.startsWith(month));
-  const total=classic.reduce((n,d)=>n+Number(d.amount_clp),0)+flexible.reduce((n,s)=>n+Number(s.amount_clp),0);
+  const total=classic.reduce((n,d)=>n+Number(d.amount_clp),0)+flexible.reduce((n,s)=>n+Number(s.amount_clp),0)+specialRows.filter(s=>s.work_date.startsWith(month)).reduce((n,s)=>n+Number(s.amount_clp),0);
   $('monthTotal').textContent=clp(total);
   $('monthDays').textContent=new Set([...classic.map(d=>d.work_date),...flexible.map(s=>s.work_date)]).size;
   $('activeWorkers').textContent=workers.filter(w=>w.active).length;
@@ -953,6 +1023,7 @@ function renderHome() {
   const byDate=new Map();
   flexShifts.forEach(s=>byDate.set(s.work_date,(byDate.get(s.work_date)||0)+Number(s.amount_clp)));
   byDate.forEach((amount,date)=>recent.push({date,amount,flex:true}));
+  for(const entry of recent)entry.amount+=specialRows.filter(p=>p.work_date===entry.date).reduce((n,p)=>n+Number(p.amount_clp),0);
   recent.sort((a,b)=>b.date.localeCompare(a.date));
   $('recentDays').innerHTML=recent.slice(0,4).map(d=>'<tr><td>'+safe(dateLabel(d.date))+(d.flex?' · Por turnos':'')+'</td><td class="money">'+clp(d.amount)+'</td><td><button class="ghost small" '+(d.flex?'data-open-flex-date':'data-open-date')+'="'+safe(d.date)+'" aria-label="Ver reparto">→</button></td></tr>').join('')||emptyRow(3,'<strong>Tu próxima jornada empieza aquí</strong>Cuando guardes un día, lo encontrarás en este espacio.');
   $('recentDaysMobile').innerHTML=recent.slice(0,4).map(d=>{
@@ -1077,7 +1148,10 @@ bind('saveWorkerLink', async () => {
 async function loadMyTips(version, selectedId) {
   $('myTipsStatus').textContent = 'Consultando tus propinas…';
   try {
-    const data = await call('propina_my_tips', {rid:selectedId});
+    const base = await call('propina_my_tips', {rid:selectedId});
+    const data=Array.isArray(base)?[...base]:[];
+    const ownSpecial=await query('turnia_special_allocations',selectedId);
+    for(const row of ownSpecial||[])if(row.worker_id===currentRestaurant()?.worker_id)data.push({...row,kind:'special',calculated_clp:row.amount_clp});
     if (version !== loadVersion || selectedId !== rid) return;
     myTips = Array.isArray(data) ? data : []; myTipsLoaded = true;
     $('myTipsStatus').textContent = ''; renderMyTips();
@@ -1095,7 +1169,7 @@ function renderMyTips() {
   const rows = invalid ? [] : myTips.filter(p => (!from || p.work_date >= from) && (!to || p.work_date <= to));
   $('myTipsTotal').textContent = myTipsLoaded ? clp(rows.reduce((n,p) => n + Number(p.calculated_clp),0)) : '—';
   $('myTipsDays').textContent = myTipsLoaded ? new Set(rows.map(p=>p.work_date)).size : '—';
-  $('myTipsRows').innerHTML = rows.map(p => `<tr><td>${safe(dateLabel(p.work_date))}</td><td>${p.kind==='flex' ? safe(p.group_code==='DIA'?'Fondo diario':p.group_code)+' · '+Number((Number(p.weight)*100).toFixed(2))+'% participación' : safe(p.hours)+' h'+(p.weight==null?'':' · '+Number((Number(p.weight)*100).toFixed(2))+'%')}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(3,invalid ? 'La fecha Desde debe ser anterior o igual a Hasta.' : myTipsLoaded ? 'No hay jornadas asignadas a tu ficha en este período.' : 'Pulsa Actualizar para consultar tus propinas.');
+  $('myTipsRows').innerHTML = rows.map(p => `<tr><td>${safe(dateLabel(p.work_date))}</td><td>${p.kind==='special'?'Propina especial · '+safe(p.scope):p.kind==='flex' ? safe(p.group_code==='DIA'?'Fondo diario':p.group_code)+' · '+Number((Number(p.weight)*100).toFixed(2))+'% participación' : safe(p.hours)+' h'+(p.weight==null?'':' · '+Number((Number(p.weight)*100).toFixed(2))+'%')}</td><td class="money">${clp(p.calculated_clp)}</td></tr>`).join('') || emptyRow(3,invalid ? 'La fecha Desde debe ser anterior o igual a Hasta.' : myTipsLoaded ? 'No hay jornadas asignadas a tu ficha en este período.' : 'Pulsa Actualizar para consultar tus propinas.');
 }
 $('myTipsFrom').onchange = renderMyTips; $('myTipsTo').onchange = renderMyTips;
 $('clearMyTips').onclick = () => { $('myTipsFrom').value = ''; $('myTipsTo').value = ''; renderMyTips(); };
@@ -1589,10 +1663,10 @@ bind('saveDay', async () => {
   if (areas.some(a => Number(a.percentage) > 0 && !presentAreas.has(a.id))) throw Error('Cada área con porcentaje positivo necesita al menos una persona presente.');
   if (flexShifts.some(s => s.work_date === date)) throw Error('El ' + dateLabel(date) + ' ya tiene propinas AM/PM. Abre esa modalidad para revisar el reparto y evita duplicar los montos.');
   if (days.some(d => d.work_date === date) && !window.confirm('Ya existe una liquidación guardada para esta fecha. Si continúas, Turnia conservará la versión anterior en el historial de revisiones y generará un nuevo reparto. ¿Deseas reemplazarla?')) return;
-  await call('propina_save_day',{p_restaurant:rid,p_date:date,p_amount:amount,p_shift_hours:hours_per_shift,p_workers:present});
+  const closed=await closeSpecial('DAY',{gross:amount,hours:hours_per_shift,workers:present});
   $('payoutDate').value = date; await load();
   const stored = days.find(d=>d.work_date===date);
-  if (!stored || Number(stored.amount_clp)!==amount) throw Error('La base de datos no confirmó el monto de la jornada. Revisa el historial antes de intentarlo de nuevo.');
+  if (!stored || Number(stored.amount_clp)!==closed.shared) throw Error('La base de datos no confirmó el monto de la jornada. Revisa el historial antes de intentarlo de nuevo.');
   $('daySaveStatus').textContent = 'Jornada del '+dateLabel(date)+' guardada correctamente por '+clp(amount)+'. Reparto fijo y cuadrado al peso.';
   $('daySaveStatus').className = 'notice success spaced';
   if (!guideDone && guideIndex >= 4 && guideIndex <= 6) { guideIndex = 7; saveGuideProgress(); }
@@ -1635,7 +1709,7 @@ bind('export',async()=>{
   const totalDaily=['TOTAL',week.recorded.length+' día(s)',week.amount,week.distributed,week.difference];
   const detail=week.details.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.area_name.localeCompare(b.area_name,'es')||a.worker_name.localeCompare(b.worker_name,'es')).map(item=>[
     item.date,item.area_name,item.worker_name,item.kind,item.turno,
-    item.hours??'',Number(item.participation.toFixed(2)),
+    item.hours??'',item.participation==null?'':Number(item.participation.toFixed(2)),
     item.points==null?'':Number(item.points.toFixed(4)),item.amount
   ]);
   const areas=week.areas.map(area=>[area.name,area.workers.size,area.dates.size,area.total]);

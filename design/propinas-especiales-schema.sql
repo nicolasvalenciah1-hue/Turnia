@@ -1,0 +1,3 @@
+-- Superseded design draft. Do not apply.
+-- Executable implementation: supabase/migrations/20261013212424_special_tips_atomic_closure.sql
+-- Includes atomic DAY/AM/PM closure, own-only RLS, receipt uniqueness and audited revisions.

@@ -1,0 +1,14 @@
+create role anon;create role authenticated;
+create schema auth;create schema propina_private;
+grant usage on schema public,auth,propina_private to authenticated,anon;
+create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+create table public.propina_restaurants(id uuid primary key,active boolean default true);
+create table public.propina_access(restaurant_id uuid,user_id uuid,worker_id uuid,role text,active boolean default true);
+create function propina_private.can_edit_restaurant(rid uuid) returns boolean language sql stable security definer set search_path='' as $$select auth.uid() is not null and exists(select 1 from public.propina_access a join public.propina_restaurants r on r.id=a.restaurant_id where a.restaurant_id=rid and a.user_id=auth.uid() and a.role in ('owner','admin') and a.active and r.active)$$;
+create function propina_private.can_read_restaurant(rid uuid) returns boolean language sql stable security definer set search_path='' as $$select exists(select 1 from public.propina_access where restaurant_id=rid and user_id=auth.uid() and active)$$;
+create table public.propina_areas(id uuid primary key,restaurant_id uuid,name text,percentage numeric);
+create table public.propina_workers(id uuid primary key,restaurant_id uuid,area_id uuid,name text,active boolean default true,unique(id,restaurant_id));
+create table public.propina_days(id uuid primary key default gen_random_uuid(),restaurant_id uuid,work_date date,amount_clp bigint,hours_per_shift numeric,unique(id,restaurant_id),unique(restaurant_id,work_date));
+create table public.propina_shifts(id uuid primary key default gen_random_uuid(),restaurant_id uuid,day_id uuid,worker_id uuid,hours numeric,participation numeric,note text,agreed boolean);
+create table public.propina_flex_shifts(id uuid primary key default gen_random_uuid(),restaurant_id uuid,work_date date,shift_code text,amount_clp bigint,rules jsonb,entries jsonb,changed_by uuid,updated_at timestamptz default now(),unique(restaurant_id,work_date,shift_code));
+create view public.propina_daily_distribution as select null::uuid day_id,null::uuid restaurant_id,null::date work_date,null::uuid area_id,null::text area_name,null::numeric percentage,null::uuid worker_id,null::text worker_name,null::numeric hours,null::numeric calculated_clp where false;

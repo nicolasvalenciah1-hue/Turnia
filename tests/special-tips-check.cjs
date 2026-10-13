@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict'),{allocations,reconcile}=require('../dist/special-tips.js');
+const t={id:'one',reference:'terminal-001',payment:'debito',method:'equal',amount:20001,allocations:allocations(20001,['b','a'])};
+assert.deepEqual(t.allocations,[{worker_id:'a',amount:10001},{worker_id:'b',amount:10000}]);
+assert.deepEqual(reconcile(250000,[t],['a','b']),{gross:250000,special:20001,shared:229999});
+assert.deepEqual(reconcile(0,[]),{gross:0,special:0,shared:0});
+assert.throws(()=>reconcile(20000,[t]));assert.throws(()=>reconcile(30000,[t,t]));
+assert.throws(()=>reconcile(30000,[t],['a']));assert.throws(()=>allocations(10,['a','a']));
+for(const n of [NaN,Infinity,-1,1.5,1000000000001])assert.throws(()=>allocations(n,['a']));
+assert.throws(()=>allocations(10,['a','b'],{a:5,b:4}));
+assert.deepEqual(allocations(10,['a','b'],{a:1,b:9}),[{worker_id:'a',amount:1},{worker_id:'b',amount:9}]);
+for(let amount=1;amount<300;amount++)for(let count=1;count<=Math.min(amount,10);count++)assert.equal(allocations(amount,Array.from({length:count},(_,i)=>String(i))).reduce((n,a)=>n+a.amount,0),amount);
+console.log('PASS: production special-tip calculator, validation and exact-peso conservation.');

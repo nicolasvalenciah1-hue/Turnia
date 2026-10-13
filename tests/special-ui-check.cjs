@@ -1,0 +1,28 @@
+const assert=require('node:assert/strict'),{app,flush}=require('./ui-check.cjs');
+(async()=>{
+ const a=await app({platform:false}),d=a.d,w=a.w;
+ const q=s=>d.querySelector(s),set=(s,v)=>{q(s).value=v;q(s).dispatchEvent(new w.Event('input',{bubbles:true}));};
+ q('[data-tab="daily"]').click();q('#date').value='2026-10-20';q('#date').dispatchEvent(new w.Event('change'));
+ set('#amount','250000');for(const el of d.querySelectorAll('[data-present]'))el.checked=true;
+ q('#saveDay').click();await flush();assert(!a.calls.some(c=>c[0]==='turnia_close_day'),'Closure requires confirmation even with no tips');
+ set('[data-special-amount]','20000');set('[data-special-reference]','terminal-20-001');
+ for(const el of d.querySelectorAll('#specialDAY [data-special-worker]'))el.checked=true;
+ q('[data-special-add]').click();await flush();assert.match(q('[data-special-list]').textContent,/10.000/);
+ assert.match(q('[data-special-total]').textContent,/230.000/);
+ assert.equal([...d.querySelectorAll('[data-day-estimate]')].reduce((n,el)=>n+Number(el.textContent.replace(/\D/g,'')),0),230000);
+ q('[data-special-add]').click();await flush();assert.equal(d.querySelectorAll('[data-special-remove]').length,1,'Same reference cannot be added twice');
+ q('[data-special-confirm]').checked=true;set('#amount','250001');assert(!q('[data-special-confirm]').checked,'Amount change invalidates confirmation');set('#amount','250000');
+ q('[data-special-confirm]').checked=true;q('#saveDay').click();await flush();await flush();
+ const saved=a.calls.find(c=>c[0]==='turnia_close_day');assert(saved);assert.equal(saved[1].p_payload.gross,250000);assert.equal(saved[1].p_payload.tips.length,1);
+ assert.match(q('#summary').textContent,/250.000/);assert.match(q('#payouts').textContent,/Propina especial/);
+ q('#historyWeekSelect').value='2026-10-19';q('#historyWeekSelect').dispatchEvent(new w.Event('change'));
+ assert.match(q('#weeklyMobileTotal').textContent,/250.000/);
+ q('#export').click();await flush();const text=await new Promise(resolve=>{const reader=new w.FileReader();reader.onload=()=>resolve(new TextDecoder().decode(new Uint8Array(reader.result)));reader.readAsArrayBuffer(a.blob());});
+ assert(text.includes('Propina especial'),'Special rows are labeled in real Excel');assert(text.includes('<v>250000</v>'),'Excel totals reconcile');assert(text.includes('<v>125000</v>'),'Each personal total includes exactly one special allocation');
+ q('#editDay').click();assert.equal(q('#amount').value,'250000','Editing restores gross, not net');assert.equal(d.querySelectorAll('[data-special-remove]').length,1);
+ q('[data-special-confirm]').checked=true;q('#saveDay').click();await flush();assert.equal(a.calls.filter(c=>c[0]==='turnia_close_day').length,1,'Correction reason required');
+ set('[data-special-reason]','Distribución corregida por acuerdo');q('[data-special-confirm]').checked=true;q('#saveDay').click();await flush();
+ assert.equal(a.calls.filter(c=>c[0]==='turnia_close_day').length,2);assert.equal(a.calls.filter(c=>c[0]==='turnia_close_day')[1][1].p_expected_revision,1);
+ assert.equal(a.errors.length,0);a.dom.window.close();
+ console.log('PASS special UI: mandatory reconciliation, beneficiaries, duplicate receipt, net preview, gross restore, weekly/personal Excel totals and audited corrections.');
+})().catch(e=>{console.error(e);process.exitCode=1});
