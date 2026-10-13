@@ -145,7 +145,7 @@ if (require.main === module) (async()=>{
 
   assert(a.d.querySelectorAll('#recentDaysMobile .recent-day-card').length>0,'Home renders mobile recent-day cards');
   assert(a.d.querySelector('#recentDaysMobile').textContent.includes('100.000'),'Mobile home shows real day totals');
-  assert(a.d.querySelector('#weeklyGroups details').length!==0,'Areas have real grouped weekly cards');
+  assert(a.d.querySelectorAll('#weeklyGroups details').length>0,'Areas have real grouped weekly cards');
   assert(a.d.querySelector('#weeklyMobileTotal').textContent.includes('100.000'),'Sticky weekly footer shows real distribution');
   const group= a.d.querySelector('#weeklyGroups details');
   assert(group.open,'The first weekly area is expanded initially');
@@ -367,7 +367,7 @@ if (require.main === module) (async()=>{
   assert.match(wk.d.querySelector('#historySummary').textContent,/50\.000/);
   assert.doesNotMatch(wk.d.querySelector('#weeklyWorkerRows').textContent,/195\.000/);
   wk.d.querySelector('#historyPrevWeek').click();
-  assert.equal(wk.d.querySelector('#weeklyGroups details').length,4,'Weekly mobile cards group all four areas');
+  assert.equal(wk.d.querySelectorAll('#weeklyGroups details').length,4,'Weekly mobile cards group all four areas');
   const cards=[...wk.d.querySelectorAll('#weeklyGroups [data-week-person]')];
   assert.equal(cards.length,4,'Each worker is included once in their respective area');
   assert.equal(wk.d.querySelector('#weeklyMobileTotal').textContent.includes('300.000'),true,'Sticky mobile total follows selected week');
