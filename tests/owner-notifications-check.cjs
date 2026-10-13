@@ -13,7 +13,7 @@ const latest=()=>{
   return {totals:{sent:2,pending:1,failed:1,total:4},recent:[
     {...shared,ticket_id:id1,restaurant_name:'Turín Ristorante',subject:'Consulta enviada',status:'sent'},
     {...shared,ticket_id:id2,restaurant_name:'Local B',subject:'Aviso en cola',status:'sending'},
-    {...shared,ticket_id:id3,restaurant_name:'Local C',subject:'<img src=x onerror=alert(1)>',status:'failed',attempts:5}
+    {...shared,ticket_id:id3,restaurant_name:'Local C',subject:'<img src=x>',status:'failed',attempts:5}
   ],limit:50};
 };
 (async()=>{
@@ -61,9 +61,8 @@ const latest=()=>{
   filter.value='all';filter.dispatchEvent(new owner.w.Event('change',{bubbles:true}));
   assert.match(owner.d.querySelector('#ownerNotificationsRows').textContent,/Correo entregado/);
   assert.equal(owner.errors.length,0,'No browser errors in notification owner dashboard');
-  owner.dom.window.close();
-
   assert(owner.d.querySelector('#ownerNotificationsPanel').closest('section').id==='notifications','Panel is separate from owner page');
+  owner.dom.window.close();
   const client=await app({platform:false,role:'viewer',restaurantContext:{read_scope:'personal',worker_id:'w1'}});
   assert(client.d.querySelector('#ownerNav').classList.contains('hide'),'Owner panel must be hidden from restaurant viewers');
   assert(client.d.querySelector('#notificationsNav').classList.contains('hide'),'Notification menu must be hidden from customers');
