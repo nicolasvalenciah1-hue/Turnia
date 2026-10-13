@@ -76,7 +76,7 @@
         await showAccount();
       }else{
         $('signupForm').hidden=true;
-        message('Revisa tu correo y abre el enlace de confirmación. Cuando vuelvas aquí, podrás crear tu equipo. No se ha creado ni cobrado nada todavía.');
+        message('Si el correo es nuevo, revisa tu bandeja de entrada y Spam para confirmar la cuenta. Si ya estabas registrado, no recibirás necesariamente otro mensaje: pulsa “Ya tengo cuenta” e inicia sesión. Todavía no se ha creado ningún equipo ni realizado cobros.');
       }
     });
   });
