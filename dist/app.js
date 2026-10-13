@@ -64,6 +64,18 @@ const check = r => {
   if (r.error) { if (isMissingSession(r.error)) expireSession(); throw r.error; }
   return r.data;
 };
+async function revalidateActiveSession() {
+  if (sessionLost || !user || !context || recoveryMode || Date.now()-lastAuthCheck<30000) return;
+  const identity = user.id;
+  lastAuthCheck=Date.now();
+  try {
+    const r=await sb.auth.getUser();
+    if (identity!==user?.id || !context) return;
+    if (r.error) { if (isMissingSession(r.error)) expireSession(); }
+    else if (!r.data?.user || r.data.user.id!==identity) expireSession();
+  } catch(e) { if (isMissingSession(e)) expireSession(); }
+}
+
 const call = async (fn, args = {}) => check(await sb.rpc(fn, args));
 const query = async (table, restaurantId) => check(await sb.from(table).select('*').eq('restaurant_id', restaurantId));
 const currentRestaurant = () => context?.restaurants?.find(r => r.id === rid);
