@@ -908,7 +908,7 @@ const guideSteps = [
   ['Ingresa las propinas','Usa el total del día en pesos chilenos.', ['Reúne el total de propinas que se va a distribuir.','Ingresa pesos completos, sin puntos ni decimales.','Comprueba la fecha y el monto antes de continuar.'], 'Para $200.000 escribe 200000. Se repartirá según los porcentajes de tus áreas.', 'daily'],
   ['Marca quién trabajó','El reparto de cada área depende de las horas.', ['Selecciona solamente a las personas que trabajaron ese día.','Anota las horas reales de cada una.','Cada área con porcentaje positivo necesita una persona presente. Si falta un área, revisa el acuerdo del equipo antes de ajustar.'], 'En una misma área, quien trabajó 12 h recibe 1,5 veces lo de alguien que trabajó 8 h.', 'daily'],
   ['Guarda y revisa el reparto','Comprueba el resultado antes de entregarlo.', ['Pulsa Guardar jornada y calcular.','En Reparto verás cuánto corresponde a cada persona.','Compara el total con lo distribuido. Si necesitas corregir una jornada existente, revisa los datos antes de confirmar su reemplazo.'], 'Revisa también el valor «Sin asignar». Todos los montos se muestran en CLP.', 'distribution'],
-  ['Consulta y exporta','El historial te ayuda a cerrar cada semana.', ['En Historial, usa Desde y Hasta para elegir un período.','Abre cualquier jornada para consultar su reparto.','Exporta el período como CSV y ábrelo con Excel para revisar o compartir.'], 'La descarga contiene el detalle por persona del restaurante seleccionado.', 'history'],
+  ['Consulta y exporta','El historial te ayuda a cerrar cada semana.', ['En Historial, elige una semana de lunes a domingo.','Abre cualquier jornada para consultar su reparto y revisa el cierre semanal por trabajador.','Exporta un Excel con el cierre, detalle diario y control de transferencias para revisar o compartir.'], 'La descarga contiene el detalle por persona del restaurante seleccionado.', 'history'],
   ['Administra y vuelve cuando quieras','Tu restaurante ya tiene una rutina clara.', ['Invita administradores o usuarios de consulta desde Accesos, si tienes permiso de propietario.','Consulta ahí la fecha de vencimiento de tu membresía. Los cobros están desactivados.','Esta guía siempre estará en el menú. Al usar un equipo compartido, cierra tu sesión.'], 'Guía completada. Ya puedes registrar tu primera jornada.', 'home']
 ];
 function guideKey() { return user ? `turnia_guide_v1_${user.id}` : ''; }
@@ -945,7 +945,7 @@ function advanceGuide() {
   if (guideIndex >= guideSteps.length - 1) return finishGuide();
   guideIndex++; saveGuideProgress(); renderGuide();
   setTab(guideSteps[guideIndex][4]);
-  const focusIds = { 2:'areaName', 3:'workerName', 4:'date', 5:'amount', 6:'attendance', 7:'payoutDate', 8:'historyFrom' };
+  const focusIds = { 2:'areaName', 3:'workerName', 4:'date', 5:'amount', 6:'attendance', 7:'payoutDate', 8:'historyWeekSelect' };
   $(focusIds[guideIndex])?.focus();
 }
 function renderTour() {
@@ -1247,29 +1247,71 @@ function openPayout(e) {
   $('payoutDate').value = el.dataset.openDate; renderPayouts(); setTab('distribution');
 }
 $('historyRows').onclick = openPayout; $('recentDays').onclick = openPayout;
-$('historyFrom').onchange = renderHistory; $('historyTo').onchange = renderHistory;
-$('clearHistory').onclick = () => { $('historyFrom').value = ''; $('historyTo').value = ''; renderHistory(); };
 function csvCell(value) {
   const text = String(value ?? '');
   // Prevent spreadsheet formulas in customer-provided names.
   return '"' + (/^[\s]*[=+@-]/.test(text) ? "'" + text : text).replace(/"/g,'""') + '"';
 }
-bind('export', async () => {
-  const visible = visibleHistory(), ids = new Set(visible.filter(x=>x.day).map(x=>x.day.id));
-  const flexDates = new Set(visible.filter(x=>x.flexShifts.length).map(x=>x.date));
-  const classic = payouts.filter(p => ids.has(p.day_id)).map(p => {
-    const shift = shifts.find(s => s.day_id === p.day_id && s.worker_id === p.worker_id);
-    return [p.work_date,currentRestaurant()?.name || '','Jornada completa',p.worker_name,p.area_name,p.hours,p.percentage,Number((Number(shift?.participation ?? 1)*100).toFixed(2)),p.calculated_clp];
+
+bind('export',async()=>{
+  if(!window.TurniaXlsx)throw Error('No se pudo cargar el generador Excel. Actualiza Turnia e inténtalo de nuevo.');
+  const week=weeklySettlement();
+  if(!week.details.length)throw Error('Selecciona una semana con propinas registradas para exportar.');
+  const restaurant=currentRestaurant()?.name||'Restaurante';
+  const subtitle=restaurant+' · '+weekDescription(week.from)+' · Valores CLP';
+  const labels=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const dayHeadings=week.dates.map((date,i)=>labels[i]+' '+date.slice(8,10)+'/'+date.slice(5,7));
+  const byDay=date=>week.details.filter(row=>row.date===date).reduce((sum,row)=>sum+row.amount,0);
+  const closing=[
+    ...week.people.map(person=>[
+      person.area,person.name,...week.dates.map(date=>person.perDay.get(date)||0),
+      person.total,'No informado'
+    ])
+  ];
+  const closingTotal=['TOTAL SEMANAL','',...week.dates.map(byDay),week.distributed,''];
+  const daily=week.recorded.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(day=>{
+    const calc=week.details.filter(item=>item.date===day.date).reduce((sum,item)=>sum+item.amount,0);
+    const label=day.flexShifts.length&&day.day?'Mixto (revisar)':day.flexShifts.length?'AM/PM':'Jornada completa';
+    return [day.date,label,day.amount,calc,day.amount-calc];
   });
-  const flexible = flexPayouts.filter(p => flexDates.has(p.work_date)).map(p => [p.work_date,currentRestaurant()?.name || '',p.group_code==='DIA'?'Fondo diario':'Turno '+p.group_code,p.worker_name,p.area_name,p.weight,'',Number((Number(p.weight)*100).toFixed(2)),p.calculated_clp]);
-  const data = [...classic,...flexible].sort((a,b)=>a[0].localeCompare(b[0]));
-  if (!data.length) throw Error('No hay repartos para exportar en este período.');
-  const rows = [['Fecha','Restaurante','Modalidad','Trabajador','Área','Horas/Partes','Porcentaje área','Participación individual (%)','Propina CLP'],...data];
-  const csv = '\ufeff' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
-  const url = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})), link = document.createElement('a');
-  link.href = url; link.download = `turnia_propinas_${today()}.csv`; document.body.append(link); link.click(); link.remove();
-  setTimeout(() => URL.revokeObjectURL(url),1000); msg('Archivo CSV descargado. Puedes abrirlo con Excel.','success');
+  const totalDaily=['TOTAL',week.recorded.length+' día(s)',week.amount,week.distributed,week.difference];
+  const detail=week.details.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.area_name.localeCompare(b.area_name,'es')||a.worker_name.localeCompare(b.worker_name,'es')).map(item=>[
+    item.date,item.area_name,item.worker_name,item.kind,item.turno,
+    item.hours??'',Number(item.participation.toFixed(2)),
+    item.points==null?'':Number(item.points.toFixed(4)),item.amount
+  ]);
+  const areas=week.areas.map(area=>[area.name,area.workers.size,area.dates.size,area.total]);
+  const transfer=week.people.map(person=>[
+    person.name,person.area,person.total,'Sin registrar','','','',''
+  ]);
+  const note='Cierre calculado con las jornadas guardadas. No acredita transferencias bancarias.';
+  const sheets=[
+    {name:'Cierre semanal',title:'TURNIA · CIERRE SEMANAL',subtitle,note,
+      headers:['Área','Trabajador',...dayHeadings,'TOTAL CLP','Pago confirmado'],
+      rows:closing,total:closingTotal,money:[2,3,4,5,6,7,8,9],
+      widths:[21,29,16,16,16,16,16,16,16,19,23]},
+    {name:'Jornadas',title:'TURNIA · CONTROL DE JORNADAS',subtitle,
+      note:'Cada fecha aparece una sola vez. Los fondos diarios AM/PM se cuentan una sola vez por persona.',
+      headers:['Fecha','Modalidad','Propinas CLP','Distribuido CLP','Diferencia CLP'],
+      rows:daily,total:totalDaily,money:[2,3,4],widths:[18,28,21,22,22]},
+    {name:'Detalle diario',title:'TURNIA · DETALLE DE PROPINA',subtitle,
+      note:'Para AM/PM con fondo diario, DIA es un solo reparto. Horas vacías significa modalidad por turnos.',
+      headers:['Fecha','Área','Trabajador','Modalidad','Turno/Fondo','Horas','Participación %','Puntos/Peso','Propina CLP'],
+      rows:detail,money:[8],widths:[17,22,29,22,20,13,19,17,20]},
+    {name:'Totales por área',title:'TURNIA · FONDOS POR ÁREA',subtitle,
+      note:'Sumas de los repartos guardados. No mueve dinero entre Cocina, Garzones u otras áreas.',
+      headers:['Área','Trabajadores','Días con reparto','Total CLP'],
+      rows:areas,total:['TOTAL',week.people.length,week.recorded.length,week.distributed],
+      money:[3],widths:[29,19,22,23]},
+    {name:'Transferencias',title:'TURNIA · CONTROL DE TRANSFERENCIAS',subtitle,
+      note:'Referencia para anotar pagos manualmente. Sin registrar NO significa que el banco haya realizado un pago.',
+      headers:['Trabajador','Área','Monto calculado CLP','Estado','Banco','Fecha transferencia','N° operación','Observaciones / comprobante'],
+      rows:transfer,money:[2],widths:[29,21,23,22,26,24,24,42]}
+  ];
+  window.TurniaXlsx.download(sheets,'Turnia_Cierre_'+week.from+'_al_'+week.to+'.xlsx');
+  msg('Excel semanal generado: cierre, jornadas, detalle, áreas y control de transferencias. El archivo no confirma pagos.','success');
 });
+
 function showToken(data, target) {
   $(target).textContent = `Invitación para ${data.email}\nCódigo: ${data.token}\nVence: ${new Date(data.expires_at).toLocaleString('es-CL')}${data.duration_days ? `\nMembresía: ${data.duration_days} días` : ''}\nComparte este código por un canal privado.`;
 }
