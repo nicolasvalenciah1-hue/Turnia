@@ -30,6 +30,7 @@ let selectedWeeklyPerson = '';
 let authVersion = 0, teamVersion = 0, platformVersion = 0;
 let teamMembers = [], teamInvitations = [], platformRestaurants = [], platformInvitations = [];
 let supportTickets = [], ownerSupportTickets = [], selectedSupportTicket = null, supportVersion = 0, ownerSupportVersion = 0;
+let ownerNotificationItems = [], ownerNotificationVersion = 0;
 const busyButtons = new Set();
 const clp = n => new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP', maximumFractionDigits:0}).format(Number(n) || 0);
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
@@ -106,7 +107,7 @@ function setTab(name) {
   if (name === 'guide') renderGuide();
   if (name === 'distribution') renderPayouts();
   if (name === 'access') void loadTeam();
-  if (name === 'owner') { void loadPlatform(); void loadOwnerSupport(); }
+  if (name === 'owner') { void loadPlatform(); void loadOwnerSupport(); void loadOwnerNotifications(); }
   if (name === 'support') void loadSupport();
   renderTour();
 }
@@ -1565,6 +1566,58 @@ async function loadSupport() {
     supportStatus(supportTickets.length+' solicitud(es) para el restaurante seleccionado.');
   } catch(e){if(version===supportVersion)supportStatus('No se pudieron cargar las solicitudes: '+errorText(e),true);}
 }
+const notificationStatusLabels={sent:'Enviada',pending:'Pendiente',sending:'Procesando',failed:'Fallida'};
+const notificationClass=status=>status==='sent'?'sent':status==='failed'?'failed':'pending';
+function renderOwnerNotifications(){
+  if(!context?.platform_admin)return;
+  const filter=$('ownerNotificationsFilter').value;
+  const rows=ownerNotificationItems.filter(item=>
+    filter==='all' || (filter==='pending' ? ['pending','sending'].includes(item.status) : item.status===filter)
+  );
+  $('ownerNotificationsRows').innerHTML=rows.map(item=>{
+    const display=notificationStatusLabels[item.status]||'Desconocido';
+    return '<tr><td><strong>#'+safe(supportShortId(item.ticket_id))+'</strong></td>'+
+      '<td class="notification-subject"><strong>'+safe(item.restaurant_name||'Restaurante')+'</strong>'+safe(item.subject||'Sin asunto')+'</td>'+
+      '<td><span class="notify-pill '+notificationClass(item.status)+'">'+safe(display)+'</span></td>'+
+      '<td>'+safe(Math.max(0,Number(item.attempts)||0))+'</td>'+
+      '<td>'+safe(supportStamp(item.created_at))+'</td>'+
+      '<td><button type="button" class="secondary small" data-notification-open="'+safe(item.ticket_id)+'">Ver ticket</button></td></tr>';
+  }).join('')||emptyRow(6,filter==='all'?'No existen notificaciones registradas.':'No hay avisos con ese estado en los últimos 50.');
+}
+async function loadOwnerNotifications(){
+  const version=++ownerNotificationVersion;
+  if(!context?.platform_admin)return;
+  $('ownerNotificationsStatus').textContent='Consultando notificaciones…';
+  try{
+    const data=await call('turnia_owner_support_notification_overview');
+    if(version!==ownerNotificationVersion || !context?.platform_admin)return;
+    const stats=data?.totals||{};
+    $('ownerNotificationsSent').textContent=Number(stats.sent)||0;
+    $('ownerNotificationsPending').textContent=Number(stats.pending)||0;
+    $('ownerNotificationsFailed').textContent=Number(stats.failed)||0;
+    ownerNotificationItems=Array.isArray(data?.recent)?data.recent:[];
+    renderOwnerNotifications();
+    $('ownerNotificationsStatus').textContent='Últimos '+ownerNotificationItems.length+' avisos · '+(Number(stats.total)||0)+' en el historial. Actualizado: '+supportStamp(new Date().toISOString())+'.';
+  }catch(e){
+    if(version===ownerNotificationVersion && context?.platform_admin){
+      $('ownerNotificationsStatus').textContent='No se pudieron consultar las notificaciones. Intenta actualizar.';
+      $('ownerNotificationsRows').innerHTML=emptyRow(6,'No se pudo recuperar el historial.');
+    }
+  }
+}
+bind('refreshOwnerNotifications',loadOwnerNotifications);
+$('ownerNotificationsFilter').addEventListener('change',renderOwnerNotifications);
+$('ownerNotificationsPanel').addEventListener('click',event=>{
+  const button=event.target.closest('[data-notification-open]');
+  if(!button)return;
+  void guard(async()=>{
+    if(!context?.platform_admin)throw Error('Solo el propietario puede consultar estas notificaciones.');
+    const ticketId=button.dataset.notificationOpen;
+    if(!ownerSupportTickets.some(t=>t.id===ticketId))await loadOwnerSupport();
+    if(!ownerSupportTickets.some(t=>t.id===ticketId))throw Error('No se encontró el ticket. Actualiza las solicitudes de soporte.');
+    await openSupportTicket(ticketId);
+  },button);
+});
 async function loadOwnerSupport() {
   const version=++ownerSupportVersion;
   if (!context?.platform_admin) return;
@@ -1682,7 +1735,7 @@ sb.auth.onAuthStateChange(event => {
   }
   if (event === 'SIGNED_OUT') {
     $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
-    authVersion++; teamVersion++; platformVersion++; supportVersion++; ownerSupportVersion++; selectedSupportTicket=null; supportTickets=[]; ownerSupportTickets=[];
+    authVersion++; teamVersion++; platformVersion++; supportVersion++; ownerSupportVersion++; ownerNotificationVersion++; selectedSupportTicket=null; supportTickets=[]; ownerSupportTickets=[]; ownerNotificationItems=[];
     platformRestaurants = []; platformInvitations = [];
     $('platformRestaurants').innerHTML = ''; $('platformInvitations').innerHTML = '';
     ['accountDisplayName','accountPhone','accountEmailReadonly','restaurantEditName','currentAccountPassword','nextAccountPassword','nextAccountPasswordConfirm','newPassword','confirmPassword'].forEach(id => { $(id).value = ''; });
