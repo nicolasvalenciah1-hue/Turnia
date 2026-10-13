@@ -10,6 +10,9 @@ const storage = {
   set(key, value) { try { localStorage.setItem(key, value); } catch {} }
 };
 const keepSession = storage.get(KEEP_SESSION_KEY) !== '0';
+const authLinkParams = new URLSearchParams(location.hash.startsWith('#') ? location.hash.slice(1) : '');
+const recoveryLinkPending = authLinkParams.get('type') === 'recovery';
+const invalidAuthLink = authLinkParams.has('error') || new URL(location.href).searchParams.has('error_code');
 let sessionStorageBackend;
 try { sessionStorageBackend = keepSession ? localStorage : sessionStorage; if (!keepSession) localStorage.removeItem(AUTH_STORAGE_KEY); } catch { sessionStorageBackend = undefined; }
 if (!window.supabase) {
@@ -23,7 +26,7 @@ let context = null, user = null, rid = '', areas = [], workers = [], days = [], 
 let myTips = [], myTipsLoaded = false;
 let flexShifts = [], flexPayouts = [];
 let restaurantBusiness = {}, restaurantBusinessFor = '', inviteError = '';
-let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = false;
+let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = recoveryLinkPending, recoveryVerified = false;
 let guideIndex = 0, guideDone = false, tourDismissed = false;
 let selectedHistoryMonday = '';
 let selectedWeeklyPerson = '';
@@ -234,12 +237,18 @@ function resetData() {
   $('teamMembers').innerHTML = ''; $('teamInvitations').innerHTML = ''; $('teamStatus').textContent = ''; renderWorkerOptions();
 }
 async function init() {
+  // An active password reset must not load restaurant data or team invitations.
+  if (recoveryMode) {
+    $('app').classList.add('hide'); $('auth').classList.add('hide');
+    $('loading').classList.add('hide'); $('recovery').classList.remove('hide');
+    return;
+  }
   const version = ++authVersion;
   const result = check(await sb.auth.getSession());
   if (version !== authVersion) return;
   user = result.session?.user || null;
   if (!user) {
-    teamSpace=false;
+    teamSpace=false; recoveryVerified=false; $('savePassword').disabled=true;
     $('restaurantSetup').classList.add('hide'); $('inviteActivation').classList.add('hide');
     context = null; rid = ''; loadVersion++; resetData();
     $('app').classList.add('hide'); $('pendingRegistration').classList.add('hide'); $('sandboxCheckoutPanel').classList.add('hide'); $('auth').classList.remove('hide'); $('loading').classList.add('hide');
@@ -1273,10 +1282,35 @@ bind('forgot', async () => {
   msg('Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.','success');
 });
 bind('savePassword', async () => {
+  if (!recoveryMode || !recoveryVerified) throw Error('Abre el enlace válido enviado a tu correo antes de cambiar la contraseña.');
   validateNewPassword($('newPassword').value, $('confirmPassword').value);
-  check(await sb.auth.updateUser({password:$('newPassword').value}));
-  $('newPassword').value = ''; $('confirmPassword').value = ''; recoveryMode = false;
-  $('recovery').classList.add('hide'); await init(); msg('Contraseña actualizada.','success');
+  const recoveredUser = check(await sb.auth.getUser()).user;
+  if (!recoveredUser?.id || !recoveredUser?.email) throw Error('La sesión de recuperación expiró. Solicita un nuevo enlace.');
+  const next = $('newPassword').value;
+  check(await sb.auth.updateUser({password:next}));
+  $('newPassword').value = ''; $('confirmPassword').value = '';
+  // Close the recovered browser session; existing accounts and data remain unchanged.
+  try {
+    await logout();
+    $('email').value = recoveredUser.email;
+    msg('Contraseña actualizada. Inicia sesión con tu nueva contraseña.', 'success');
+  } catch {
+    $('savePassword').disabled = true;
+    $('recoveryMessage').textContent = 'Contraseña actualizada, pero no pudimos cerrar la sesión. Pulsa «Cancelar y volver a entrar».';
+    $('recoveryMessage').className = 'notice info';
+  }
+});
+bind('cancelRecovery', async () => {
+  const session = check(await sb.auth.getSession()).session;
+  if (session) await logout();
+  else {
+    recoveryMode = false; recoveryVerified = false;
+    $('recovery').classList.add('hide'); $('auth').classList.remove('hide');
+    $('newPassword').value = ''; $('confirmPassword').value = '';
+    $('savePassword').disabled = true;
+  }
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  msg('Puedes iniciar sesión con tu cuenta habitual o solicitar otro enlace de recuperación.', 'info');
 });
 bind('saveAccountProfile', async () => {
   if (!user) throw Error('Debes iniciar sesión.');
@@ -1308,7 +1342,7 @@ bind('changeAccountPassword', async () => {
   $('testPasswordLogin').classList.remove('hide');
 });
 function validateNewPassword(password, confirmation) {
-  if (password.length < 8) throw Error('Usa una contraseña de al menos 8 caracteres.');
+  if (password.length < 10) throw Error('Usa una contraseña nueva de al menos 10 caracteres.');
   if (new TextEncoder().encode(password).length > 72) throw Error('La contraseña es demasiado larga. Usa una más corta.');
   if (password !== confirmation) throw Error('Las contraseñas nuevas no coinciden.');
 }
@@ -1855,7 +1889,14 @@ document.addEventListener('keydown', e => {
 });
 sb.auth.onAuthStateChange(event => {
   if (event === 'PASSWORD_RECOVERY') {
-    recoveryMode = true; $('auth').classList.add('hide'); $('app').classList.add('hide'); $('loading').classList.add('hide'); $('recovery').classList.remove('hide');
+    recoveryMode = true; recoveryVerified = true;
+    $('auth').classList.add('hide'); $('app').classList.add('hide'); $('loading').classList.add('hide');
+    $('recovery').classList.remove('hide');
+    $('recoveryMessage').className = 'notice info';
+    $('recoveryMessage').textContent = 'Enlace verificado. Introduce una contraseña nueva y distinta de la anterior.';
+    $('savePassword').disabled = false;
+    // Supabase has already verified the reset link, so remove its URL fragment.
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   }
   if (event === 'SIGNED_OUT') {
     teamSpace=false;
@@ -1870,6 +1911,15 @@ sb.auth.onAuthStateChange(event => {
   }
 });
 $('date').value = today(); $('flexDate').value = today(); $('payoutDate').value = today(); setTab('home');
-guard(async () => { try { await init(); } finally { $('loading').classList.add('hide'); if (!context) $('auth').classList.remove('hide'); } });
+guard(async () => { try { await init(); } finally {
+  $('loading').classList.add('hide');
+  if (!context && !recoveryMode) $('auth').classList.remove('hide');
+  if (recoveryMode) { $('auth').classList.add('hide'); $('recovery').classList.remove('hide'); }
+  if (invalidAuthLink && !recoveryMode && !context) {
+    $('authMessage').textContent = 'El enlace no es válido o ha caducado. Solicita uno nuevo desde «Olvidé mi contraseña».';
+    $('authMessage').className = 'notice error';
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  }
+} });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(() => {});
 })();

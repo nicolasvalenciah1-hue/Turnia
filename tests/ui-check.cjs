@@ -7,8 +7,8 @@ const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
 const weeklyExcelCode = fs.readFileSync(__dirname+'/../dist/weekly-excel.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
-async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}, dataOverrides={}, userMetadata={}}={}) {
-  const dom = new JSDOM(html,{url:'https://turnia.test/',runScripts:'outside-only'}), w=dom.window, d=w.document;
+async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', initialUrl='https://turnia.test/', restaurantContext={}, rpcOverrides={}, authOverrides={}, dataOverrides={}, userMetadata={}}={}) {
+  const dom = new JSDOM(html,{url:initialUrl,runScripts:'outside-only'}), w=dom.window, d=w.document;
   const calls=[]; let capturedBlob; const errors=[];
   w.addEventListener('error',e=>errors.push(e.error));
   const user={id:'test-user',email:'owner@example.test',user_metadata:registered?{turnia_registration:'v1'}:invitationCode?{propina_invitation:invitationCode}:{}};
@@ -31,6 +31,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   const sb={auth:{
     getSession:async()=>({data:{session}}),
     onAuthStateChange:fn=>{authChange=fn;},
+    getUser:async()=>({data:{user:session?.user || null}}),
     signInWithPassword:async args=>{calls.push(['signInWithPassword',args]);if(authOverrides.signInWithPassword)return authOverrides.signInWithPassword(args);if(args.password!==storedPassword)return {error:{message:'Invalid login credentials'}};session={user};return {data:{session}};},
     signOut:async args=>{calls.push(['signOut',args]);session=null;authChange('SIGNED_OUT');return {data:{}};},
     signUp:async args=>{calls.push(['signup',args]);return {data:{}};},
@@ -110,12 +111,12 @@ if (require.main === module) (async()=>{
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=area-safety-20261013-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=area-safety-20261013-1'),'App asset is versioned');
+  assert(html.includes('app.js?v=account-recovery-security-20261013-1'),'App asset is versioned');
   assert(html.includes('weekly-excel.js?v=weekly-settlement-20261012-1'),'Offline XLSX generator is loaded');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(css.includes('.classic-area-preview'),'Independent area quota preview is styled');
-  assert(sw.includes('turnia-shell-v18'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v19'),'App shell cache version bumped');
   assert(css.includes('@media(max-width:600px)'),'Mobile CSS applies to small phones');
   assert(css.includes('.summary-grid-home'),'Dashboard KPI cards use responsive layout');
   assert(css.includes('.weekly-mobile-bottom'),'Weekly Excel action has mobile sticky bar');
