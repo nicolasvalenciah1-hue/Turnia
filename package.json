@@ -5,7 +5,7 @@
   "description": "Pruebas de la aplicación web Turnia",
   "scripts": {
     "check": "node --check dist/app.js && node --check dist/weekly-excel.js && node --check dist/sw.js && node --check dist/invitacion.js && node --check dist/equipo.js",
-    "test": "npm run check && node tests/ui-check.cjs && node tests/weekly-excel-check.cjs && node tests/settings-check.cjs && node tests/worker-links-check.cjs && node tests/support-check.cjs && node tests/invitation-email-check.cjs && node tests/support-notification-check.cjs && node tests/support-email-worker-check.cjs && node tests/owner-notifications-check.cjs && node tests/team-self-service-check.cjs && node tests/workspace-transition-check.cjs && node tests/area-delete-check.cjs && node tests/settlement-history-check.cjs && node tests/recovery-security-check.cjs"
+    "test": "npm run check && node tests/ui-check.cjs && node tests/weekly-excel-check.cjs && node tests/settings-check.cjs && node tests/worker-links-check.cjs && node tests/support-check.cjs && node tests/invitation-email-check.cjs && node tests/support-notification-check.cjs && node tests/support-email-worker-check.cjs && node tests/owner-notifications-check.cjs && node tests/team-self-service-check.cjs && node tests/workspace-transition-check.cjs && node tests/area-delete-check.cjs && node tests/settlement-history-check.cjs && node tests/recovery-security-check.cjs && node tests/auth-session-check.cjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"

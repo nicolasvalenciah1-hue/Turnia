@@ -111,12 +111,12 @@ if (require.main === module) (async()=>{
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=area-safety-20261013-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=account-recovery-security-20261013-1'),'App asset is versioned');
+  assert(html.includes('app.js?v=auth-session-fix-20261013-1'),'App asset is versioned');
   assert(html.includes('weekly-excel.js?v=weekly-settlement-20261012-1'),'Offline XLSX generator is loaded');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(css.includes('.classic-area-preview'),'Independent area quota preview is styled');
-  assert(sw.includes('turnia-shell-v19'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v20'),'App shell cache version bumped');
   assert(css.includes('@media(max-width:600px)'),'Mobile CSS applies to small phones');
   assert(css.includes('.summary-grid-home'),'Dashboard KPI cards use responsive layout');
   assert(css.includes('.weekly-mobile-bottom'),'Weekly Excel action has mobile sticky bar');
