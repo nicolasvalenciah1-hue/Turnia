@@ -5,6 +5,17 @@
   const check = result => { if (result.error) throw result.error; return result.data; };
   let code = new URL(location.href).searchParams.get('codigo') || '';
   let sb, needsPassword = false, validated = false, busy = false;
+  // Exiting an invitation signs out its temporary session first. Otherwise
+  // the app can redirect the same invited account back here indefinitely.
+  $('leaveInvitation').addEventListener('click', async () => {
+    const button = $('leaveInvitation'); button.disabled = true;
+    try {
+      if (sb) check(await sb.auth.signOut({ scope: 'local' }));
+      (window.__navigate || (target => location.replace(target)))('/');
+    } catch (error) {
+      message('No pudimos cerrar esta sesión. Reintenta para volver al inicio sin completar la invitación.', true);
+    } finally { button.disabled = false; }
+  });
   try {
     const keep = localStorage.getItem('propina_keep_session') !== '0';
     sb = window.supabase.createClient('https://kfaolqnrqlypoyzkejlt.supabase.co', 'sb_publishable_uT_FeTqwfX8AhkUtgmo--Q_bemTQkwP', { auth: { storage: keep ? localStorage : sessionStorage, persistSession: true, detectSessionInUrl: true } });
