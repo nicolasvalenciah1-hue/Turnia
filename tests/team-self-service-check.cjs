@@ -65,7 +65,8 @@ function createTeamPage({confirmed=false,keepSession=true}={}){
   assert(signupCall,'Sign-up requests Supabase Auth');
   assert.equal(signupCall[1].options.emailRedirectTo,'https://turnia.test/equipo.html');
   assert.equal(signupCall[1].options.data.turnia_team_name,'Garzones del centro');
-  assert.match(signup.d.querySelector('#status').textContent,/Revisa tu correo/);
+  assert.match(signup.d.querySelector('#status').textContent,/Si el correo es nuevo/);
+  assert.match(signup.d.querySelector('#status').textContent,/Ya tengo cuenta/,'Existing user can choose login without expecting a confirmation mail');
   assert(!signup.calls.some(x=>x[0]==='rpc'),'Unverified signup cannot create a team');
   signup.dom.window.close();
 
