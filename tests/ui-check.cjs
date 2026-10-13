@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const html = fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
+const weeklyExcelCode = fs.readFileSync(__dirname+'/../dist/weekly-excel.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
 async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}, dataOverrides={}}={}) {
@@ -95,7 +96,7 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   w.supabase={createClient:()=>sb};
   w.confirm=()=>true; w.URL.createObjectURL=blob=>{capturedBlob=blob;return 'blob:mock';};w.URL.revokeObjectURL=()=>{};
   w.HTMLAnchorElement.prototype.click=function(){};
-  w.eval(code); await flush();
+  w.eval(weeklyExcelCode); w.eval(code); await flush();
   return {w,d,calls,errors,dom,authChange,sb,user,context,blob:()=>capturedBlob};
 }
 if (require.main === module) (async()=>{
@@ -104,12 +105,13 @@ if (require.main === module) (async()=>{
   const a=await app();
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
-  assert(html.includes('styles.css?v=double-points-20261012-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=double-points-20261012-1'),'App asset is versioned');
+  assert(html.includes('styles.css?v=weekly-settlement-20261012-1'),'Styles asset is versioned');
+  assert(html.includes('app.js?v=weekly-settlement-20261012-1'),'App asset is versioned');
+  assert(html.includes('weekly-excel.js?v=weekly-settlement-20261012-1'),'Offline XLSX generator is loaded');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(css.includes('.classic-area-preview'),'Independent area quota preview is styled');
-  assert(sw.includes('turnia-shell-v9'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v10'),'App shell cache version bumped');
   assert.equal(a.d.querySelector('#profileName').textContent,'Nicolás Valencia');
    assert.equal(a.d.querySelector('#avatar').textContent,'M','Platform owner displays Mutavia monogram');
   // Personal settings can be used by every logged-in user.
@@ -150,11 +152,22 @@ if (require.main === module) (async()=>{
   a.d.querySelector('#historyRows [data-open-date]').click();
   assert.equal(a.d.querySelector('#payouts').children.length,2);
   assert.match(a.d.querySelector('#summary').textContent,/100.000/);
-  a.d.querySelector('#historyFrom').value='2026-10-02'; a.d.querySelector('#historyFrom').dispatchEvent(new a.w.Event('change'));
-  assert(a.d.querySelector('#export').disabled); a.d.querySelector('#clearHistory').click();
+  const weekBefore=a.d.querySelector('#historyWeekSelect').value;
+  assert.match(a.d.querySelector('#historyWeekLabel').textContent,/Lun .*Dom /,'Weekly history is Monday to Sunday');
+  a.d.querySelector('#historyNextWeek').click();
+  assert(a.d.querySelector('#export').disabled,'An empty calendar week has no export');
+  a.d.querySelector('#historyPrevWeek').click();
+  assert.equal(a.d.querySelector('#historyWeekSelect').value,weekBefore,'Previous week restores its settlements');
+  assert.match(a.d.querySelector('#weeklyWorkerRows').textContent,/Camila/);
   a.d.querySelector('#export').click(); await flush();
-  const csv=await new Promise(r=>{const reader=new a.w.FileReader(); reader.onload=()=>r(reader.result);reader.readAsText(a.blob());});
-  assert(csv.includes("'=FORMULA"),'CSV neutralizes formulas'); assert(csv.includes('40000'));
+  const workbookBytes=await new Promise(r=>{const reader=new a.w.FileReader();reader.onload=()=>r(new Uint8Array(reader.result));reader.readAsArrayBuffer(a.blob());});
+  const workbookText=new TextDecoder().decode(workbookBytes);
+  assert.equal(workbookBytes[0],80,'Real XLSX starts with PK ZIP signature');
+  assert.equal(workbookBytes[1],75,'Real XLSX starts with PK ZIP signature');
+  assert(workbookText.includes('xl/worksheets/sheet5.xml'),'Weekly Excel has five worksheets');
+  assert(workbookText.includes('Transferencias'),'Workbook includes payment control sheet');
+  assert(workbookText.includes("'=FORMULA"),'XLSX neutralizes spreadsheet formulas');
+  assert(workbookText.includes('<v>40000</v>'),'Money remains numeric inside XLSX');
   a.d.querySelector('[data-tab="daily"]').click();
   a.d.querySelector('#date').value=date; a.d.querySelector('#date').dispatchEvent(new a.w.Event('change'));
   a.d.querySelector('#amount').value='120000'; a.d.querySelector('[data-present="w2"]').checked=true;
@@ -217,9 +230,9 @@ if (require.main === module) (async()=>{
   assert.equal(savedClassic[1][1].p_workers[0].participation,1);
   assert(classic.d.querySelector('#payouts').textContent.includes('75%'),'Updated payout shows 75%');
   classic.d.querySelector('#export').click();await flush();
-  const csvClassic=await new Promise(r=>{const reader=new classic.w.FileReader();reader.onload=()=>r(reader.result);reader.readAsText(classic.blob());});
-  assert(csvClassic.includes('Participación individual (%)'));
-  assert(csvClassic.includes('"75"'),'CSV preserves the individual percentage');
+  const xlsxClassic=await new Promise(r=>{const reader=new classic.w.FileReader();reader.onload=()=>r(new TextDecoder().decode(new Uint8Array(reader.result)));reader.readAsArrayBuffer(classic.blob());});
+  assert(xlsxClassic.includes('Participación %'),'Daily-detail sheet exports individual percentages');
+  assert(xlsxClassic.includes('<v>75</v>'),'XLSX preserves 75% as a numeric value');
   assert.equal(classic.errors.length,0);
   classic.dom.window.close();
   // Double shift: 16 hours is already two points; 200% would multiply it again.
@@ -268,6 +281,70 @@ if (require.main === module) (async()=>{
   assert.match(example.d.querySelector('#payouts').textContent,/169\.929/);
   assert.equal(example.errors.length,0);
   example.dom.window.close();
+
+  // Weekly Monday-Sunday split with one daily AM/PM pool, per-person totals,
+  // independent areas and the transfer-control worksheet.
+  const weeklyArea=[{id:'a1',name:'Garzones',percentage:65},{id:'a2',name:'Cocina',percentage:20},
+    {id:'a3',name:'Barra',percentage:10},{id:'a4',name:'Copería',percentage:5}];
+  const weeklyWorkers=[
+    {id:'w1',name:'Garzón principal',area_id:'a1',active:true},
+    {id:'w2',name:'Chef',area_id:'a2',active:true},
+    {id:'w3',name:'Barra',area_id:'a3',active:true},
+    {id:'w4',name:'Copero',area_id:'a4',active:true}
+  ];
+  const wk=await app({platform:false,role:'owner',dataOverrides:{
+    propina_areas:weeklyArea,propina_workers:weeklyWorkers,
+    propina_days:[
+      {id:'dSat',work_date:'2026-10-10',amount_clp:200000,hours_per_shift:8},
+      {id:'dMon',work_date:'2026-10-12',amount_clp:50000,hours_per_shift:8}
+    ],
+    propina_shifts:[],
+    propina_daily_distribution:[
+      ...[['w1','Garzón principal','a1','Garzones',130000],['w2','Chef','a2','Cocina',40000],
+         ['w3','Barra','a3','Barra',20000],['w4','Copero','a4','Copería',10000]].map(
+           ([worker_id,worker_name,area_id,area_name,calculated_clp])=>
+           ({day_id:'dSat',work_date:'2026-10-10',worker_id,worker_name,area_id,area_name,hours:8,percentage:65,calculated_clp})),
+      ...[['w1','Garzón principal','a1','Garzones',32500],['w2','Chef','a2','Cocina',10000],
+         ['w3','Barra','a3','Barra',5000],['w4','Copero','a4','Copería',2500]].map(
+           ([worker_id,worker_name,area_id,area_name,calculated_clp])=>
+           ({day_id:'dMon',work_date:'2026-10-12',worker_id,worker_name,area_id,area_name,hours:8,percentage:65,calculated_clp}))
+    ],
+    propina_flex_shifts:[
+      {id:'flexAM',work_date:'2026-10-11',shift_code:'AM',amount_clp:60000,rules:[],entries:[]},
+      {id:'flexPM',work_date:'2026-10-11',shift_code:'PM',amount_clp:40000,rules:[],entries:[]}
+    ],
+    propina_flex_payouts:[
+      ...[['w1','Garzón principal','a1','Garzones',65000],['w2','Chef','a2','Cocina',20000],
+         ['w3','Barra','a3','Barra',10000],['w4','Copero','a4','Copería',5000]].map(
+           ([worker_id,worker_name,area_id,area_name,calculated_clp])=>
+           ({work_date:'2026-10-11',group_code:'DIA',worker_id,worker_name,area_id,area_name,weight:1,calculated_clp}))
+    ]
+  }});
+  const select=wk.d.querySelector('#historyWeekSelect');
+  select.value='2026-10-05';select.dispatchEvent(new wk.w.Event('change'));
+  assert.equal(select.value,'2026-10-05');
+  assert.match(wk.d.querySelector('#historyWeekLabel').textContent,/11 oct/);
+  assert.equal(wk.d.querySelector('#historyRows').children.length,2,'Saturday + Sunday share one week');
+  assert.match(wk.d.querySelector('#historySummary').textContent,/300\.000/,'Classic plus AM+PM funds total $300k');
+  assert.match(wk.d.querySelector('#weeklyStats').textContent,/300\.000/);
+  assert.match(wk.d.querySelector('#weeklyWorkerRows').textContent,/195\.000/,'Waiter receives 130k Saturday + 65k Sunday');
+  assert.match(wk.d.querySelector('#weeklyAreaRows').textContent,/60\.000/,'Kitchen receives 40k Saturday and 20k Sunday');
+  assert.equal(wk.d.querySelector('#weeklyNotice').classList.contains('error'),false,'No double counting DIA');
+  wk.d.querySelector('#historyNextWeek').click();
+  assert.equal(wk.d.querySelector('#historyWeekSelect').value,'2026-10-12','Monday starts next weekly period');
+  assert.equal(wk.d.querySelector('#historyRows').children.length,1);
+  assert.match(wk.d.querySelector('#historySummary').textContent,/50\.000/);
+  assert.doesNotMatch(wk.d.querySelector('#weeklyWorkerRows').textContent,/195\.000/);
+  wk.d.querySelector('#historyPrevWeek').click();
+  wk.d.querySelector('#export').click(); await flush();
+  const weeklyBytes=await new Promise(resolve=>{const reader=new wk.w.FileReader();reader.onload=()=>resolve(new TextDecoder().decode(new Uint8Array(reader.result)));reader.readAsArrayBuffer(wk.blob());});
+  assert(weeklyBytes.includes('Cierre semanal'));
+  assert(weeklyBytes.includes('Control de transferencias')||weeklyBytes.includes('CONTROL DE TRANSFERENCIAS'));
+  assert(weeklyBytes.includes('<v>195000</v>'),'Workbook contains weekly total per waiter');
+  assert(weeklyBytes.includes('<v>60000</v>'),'Workbook contains kitchen weekly total');
+  assert(weeklyBytes.includes('Sin registrar'),'Payments are never marked as confirmed');
+  assert.equal(wk.errors.length,0);
+  wk.dom.window.close();
   const b=await app({platform:false,role:'viewer'});
   assert(b.d.querySelector('#saveDay').disabled,'Viewer cannot save');
   assert(b.d.querySelector('[data-day-percent="w2"]').disabled,'Viewer cannot edit individual share');
@@ -362,7 +439,8 @@ if (require.main === module) (async()=>{
   assert.match(row.textContent,/Por turnos/,'History labels the distribution method, not individual shifts');
   assert(!/Turno AM|Turno PM/.test(row.textContent),'History does not split AM and PM');
   assert.match(row.textContent,/2\.000/,'History totals AM and PM');
-  assert.match(flex.d.querySelector('#historySummary').textContent,/2 día\(s\)/,'History counts dates, not shifts');
+  assert.match(flex.d.querySelector('#historySummary').textContent,/1 día\(s\)/,'History counts only dates within the selected Monday-Sunday week');
+  assert(flex.d.querySelector('#historyWeekSelect').textContent.includes('28 sept'),'Earlier classic day is kept in its own previous week');
   flex.d.querySelector('#historyRows [data-open-flex-date="2026-10-09"]').click();
   assert.equal(flex.d.querySelector('#flexDate').value,'2026-10-09');
   assert.equal(flex.d.querySelector('#dayEntryMode').value,'flex','Unified history opens saved AM/PM mode');

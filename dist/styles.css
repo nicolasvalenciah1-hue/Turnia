@@ -115,3 +115,27 @@
 .onboarding-tour-actions{display:flex;flex-direction:column;gap:7px;min-width:150px}
 .onboarding-tour-actions button{min-height:40px}
 @media(max-width:700px){.onboarding-tour{display:block;padding:17px}.onboarding-tour-actions{display:flex;flex-direction:row;flex-wrap:wrap;min-width:0;margin-top:12px}.onboarding-tour-actions button{flex:1 1 125px}}
+
+/* Weekly tip reconciliation: Monday-Sunday picker and transfer-friendly summary */
+.weekly-picker-panel{background:linear-gradient(135deg,#fff,#f6f9f8)}
+.weekly-picker-row{display:flex;align-items:end;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.weekly-picker-field{min-width:240px;flex:1}
+.weekly-picker-field select{font-weight:650}
+.weekly-picker-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.weekly-picker-actions button{white-space:nowrap}
+.weekly-period{border-top:1px solid var(--line);margin-top:18px;padding-top:16px}
+.weekly-period>div{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.weekly-period strong{font-size:18px}
+.weekly-period p{margin:8px 0 0;font-size:12px}
+.weekly-close-panel{border-top:3px solid #087f8c}
+.weekly-close-panel .eyebrow{margin-bottom:8px}
+.weekly-close-panel h3{margin:25px 0 12px;font-size:15px}
+.weekly-close-panel th,.weekly-close-panel td{font-variant-numeric:tabular-nums}
+.weekly-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:17px 0}
+.weekly-kpi{background:#f2f7f6;border-radius:12px;padding:15px;border:1px solid #e2ecea}
+.weekly-kpi small{color:var(--muted);font-size:11px;display:block;margin-bottom:7px}
+.weekly-kpi strong{font-size:21px;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
+.weekly-total-row{background:#eaf4f1;font-weight:750}
+.weekly-total-row td{border-top:2px solid #9fc7bf}
+.weekly-close-panel .state-text{line-height:1.65}
+@media(max-width:680px){.weekly-picker-actions{width:100%}.weekly-picker-actions button{flex:1;padding:11px 6px}.weekly-kpis{gap:7px}.weekly-kpi{padding:12px 8px}.weekly-kpi strong{font-size:16px}.weekly-period strong{font-size:16px}}
