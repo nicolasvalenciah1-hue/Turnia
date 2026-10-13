@@ -697,6 +697,74 @@ $('weeklyExpandAll').onclick=()=>{
   $('weeklyExpandAll').textContent=expand?'Contraer todas ↑':'Expandir todas ↓';
 };
 
+
+function renderHistoryDay(day, week) {
+  // Exactly one accordion per calendar date, even when AM and PM both exist.
+  // All values come from the already-saved, tenant-scoped daily allocations.
+  const entries=week.details.filter(item=>item.date===day.date);
+  const distributed=entries.reduce((sum,item)=>sum+item.amount,0);
+  const difference=day.amount-distributed;
+  const flexible=day.flexShifts.length>0;
+  const modality=flexible&&day.day?'Modalidades registradas':flexible?'Por turnos AM/PM':'Jornada completa';
+  const date=new Date(day.date+'T12:00:00');
+  const longDate=date.toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'});
+  const month=date.toLocaleDateString('es-CL',{month:'short'});
+  const areasForDay=new Map();
+  const uniquePeople=new Set();
+  for(const item of entries){
+    const areaKey=String(item.area_id);
+    if(!areasForDay.has(areaKey))areasForDay.set(areaKey,{name:item.area_name,total:0,people:new Map()});
+    const area=areasForDay.get(areaKey);
+    area.total+=item.amount;
+    const personKey=item.worker_id||'nombre:'+item.worker_name;
+    uniquePeople.add(areaKey+'|'+personKey);
+    if(!area.people.has(personKey))area.people.set(personKey,{name:item.worker_name,amount:0,turnos:new Set()});
+    const person=area.people.get(personKey);
+    person.amount+=item.amount;
+    person.turnos.add(item.turno);
+  }
+  const distribution=[...areasForDay.values()].sort((a,b)=>a.name.localeCompare(b.name,'es')).map(area=>
+    '<div class="history-day-area"><div class="history-day-area-title"><strong>'+safe(area.name)+'</strong>'+
+    '<span>'+clp(area.total)+'</span></div>'+
+    [...area.people.values()].sort((a,b)=>a.name.localeCompare(b.name,'es')).map(person=>
+      '<div class="history-day-person"><span><strong>'+safe(person.name)+'</strong>'+
+      '<small>'+safe([...person.turnos].join(' + '))+'</small></span>'+
+      '<strong class="money">'+clp(person.amount)+'</strong></div>').join('')+'</div>'
+  ).join('')||'<p class="muted history-day-no-payout">Esta jornada aún no tiene un reparto calculado.</p>';
+  const open=flexible?'data-open-flex-date':'data-open-date';
+  const consistency=difference===0?
+    '<span class="history-day-balanced">Reparto cuadrado</span>':
+    '<span class="history-day-mismatch">Diferencia por revisar: '+clp(Math.abs(difference))+'</span>';
+  return '<details class="history-day" data-history-date="'+safe(day.date)+'">'+
+    '<summary aria-label="Abrir u ocultar el reparto del '+safe(longDate)+'">'+
+      '<span class="history-day-calendar" aria-hidden="true">'+safe(String(date.getDate()))+'<small>'+safe(month)+'</small></span>'+
+      '<span class="history-day-label"><strong>'+safe(longDate)+'</strong>'+
+        '<small>'+safe(modality)+' · '+uniquePeople.size+' persona(s)</small></span>'+
+      '<span class="history-day-amount"><small>Propinas</small><strong>'+clp(day.amount)+'</strong></span>'+
+      '<span class="history-day-caret" aria-hidden="true">⌄</span>'+
+    '</summary>'+
+    '<div class="history-day-detail"><div class="history-day-totals">'+
+      '<span><small>Propinas registradas</small><strong>'+clp(day.amount)+'</strong></span>'+
+      '<span><small>Distribuido al equipo</small><strong>'+clp(distributed)+'</strong></span>'+
+      '<span>'+consistency+'</span></div>'+
+      '<div class="history-day-area-list">'+distribution+'</div>'+
+      '<div class="history-day-actions"><button class="secondary small" type="button" '+open+'="'+safe(day.date)+'">'+
+       'Abrir reparto completo →</button><span class="muted">Vuelve a tocar la fecha para ocultar este detalle.</span></div>'+
+    '</div></details>';
+}
+function updateHistoryToggleLabel() {
+  const all=[...$('historyRows').querySelectorAll('details.history-day')];
+  const allOpen=all.length&&all.every(day=>day.open);
+  $('historyToggleAll').textContent=allOpen?'Ocultar todas ↑':'Mostrar todas ↓';
+}
+$('historyToggleAll').onclick=()=>{
+  const items=[...$('historyRows').querySelectorAll('details.history-day')];
+  const open=items.some(day=>!day.open);
+  items.forEach(day=>{day.open=open;});
+  updateHistoryToggleLabel();
+};
+$('historyRows').addEventListener('toggle',updateHistoryToggleLabel,true);
+
 function renderHistory() {
   const week=weeklySettlement(),data=week.recorded;
   const available=new Set(allHistoryDays().map(d=>weekMonday(d.date)));
@@ -707,14 +775,10 @@ function renderHistory() {
   const finished=week.to<today();
   $('historyWeekStatus').textContent=finished?'Semana finalizada':'Semana en curso';
   $('historyWeekStatus').className='badge '+(finished?'':'gray');
-  $('historyRows').innerHTML=data.map(d=>{
-    const flexible=d.flexShifts.length>0;
-    const distributed=week.details.filter(p=>p.date===d.date).reduce((sum,p)=>sum+p.amount,0);
-    const modality=flexible&&d.day?'Revisar modalidades':flexible?'Por turnos AM/PM':'Jornada completa';
-    const open=flexible?'data-open-flex-date':'data-open-date';
-    return '<tr><td>'+safe(dateLabel(d.date))+'</td><td>'+modality+'</td><td class="money">'+clp(d.amount)+
-      '</td><td class="money">'+clp(distributed)+'</td><td><button class="ghost small" '+open+'="'+safe(d.date)+'">Ver reparto →</button></td></tr>';
-  }).join('')||emptyRow(5,'No hay jornadas guardadas entre el lunes y el domingo de esta semana.');
+  $('historyRows').innerHTML=data.map(day=>renderHistoryDay(day,week)).join('')||
+    '<p class="muted history-day-empty">No hay jornadas guardadas para la semana seleccionada.</p>';
+  $('historyToggleAll').disabled=!data.length;
+  updateHistoryToggleLabel();
   $('historySummary').textContent=data.length+' día(s) registrado(s) · '+clp(week.amount)+' en propinas. Las transferencias bancarias no se confirman automáticamente.';
   $('weeklyStats').innerHTML=[
     ['Propinas de la semana',week.amount],['Distribuido entre el equipo',week.distributed],['Diferencia por revisar',week.difference]
