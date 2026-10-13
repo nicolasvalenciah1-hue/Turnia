@@ -34,5 +34,43 @@ Deno.serve(async (req: Request) => {
   const recorded = await admin.rpc("turnia_finish_invitation_email", { invitation_id: claim.data.id, attempt: claim.data.attempt, delivered_to_smtp: !failure });
   if (failure) return reply(502, { error: "smtp_send_failed" });
   if (recorded.error) return reply(503, { error: "email_status_pending" });
-  return reply(200, { status: "accepted_by_smtp" });
+  // Keep Supabase Auth's signed email: it is required for account confirmation.
+  // This second message adds a clear link and the invitation code. It cannot grant access.
+  let appLinkEmail = "not_configured";
+  const resendKey = Deno.env.get("RESEND_API_KEY");
+  const sender = Deno.env.get("TURNIA_SUPPORT_FROM");
+  if (resendKey && sender) {
+    try {
+      const appUrl = ORIGIN + "/";
+      const inviteUrl = appUrl + "?turnia_invite=" + input.token;
+      const plain = [
+        "Te invitaron a Turnia - Cada turno cuenta.",
+        "",
+        "Primero: abre el otro correo de confirmacion de Turnia y activa tu cuenta.",
+        "Luego entra a la aplicacion: " + appUrl,
+        "Tu codigo de invitacion: " + input.token,
+        "Enlace a tu invitacion: " + inviteUrl,
+        "Este codigo es personal. No compartas tu contrasena."
+      ].join("\n");
+      const html = '<!doctype html><html lang="es"><body style="background:#f5f7f7;padding:24px;font-family:Arial,sans-serif;color:#14283f">'
+        + '<div style="max-width:520px;margin:auto;background:#fff;padding:28px;border:1px solid #e2e7e7;border-radius:14px">'
+        + '<p style="letter-spacing:2px;color:#087f8c;font-weight:bold">TURNIA</p><h1>Te invitaron a Turnia</h1>'
+        + '<p><strong>Primero</strong> abre el otro correo de Turnia con el enlace de confirmación o acceso para activar tu cuenta.</p>'
+        + '<p style="text-align:center;margin:28px 0"><a href="' + appUrl + '" style="background:#087f8c;color:white;border-radius:9px;padding:15px 24px;text-decoration:none;font-weight:bold">Abrir la aplicación Turnia</a></p>'
+        + '<p>Enlace de Turnia: <a href="' + appUrl + '">' + appUrl + '</a></p>'
+        + '<p>Tu código de invitación:</p><p style="background:#f4f6f6;border-radius:8px;padding:12px;overflow-wrap:anywhere"><code>' + input.token + '</code></p>'
+        + '<p>Después de confirmar tu correo, puedes <a href="' + inviteUrl + '">abrir tu invitación directamente</a>.</p>'
+        + '<p style="font-size:12px;color:#637180">No compartas tu contraseña ni tu código con terceros.</p>'
+        + '</div></body></html>';
+      const extra = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + resendKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: sender, to: [claim.data.email], subject: "Turnia · Tu enlace y código de invitación", html, text: plain }),
+        signal: AbortSignal.timeout(10000)
+      });
+      appLinkEmail = extra.ok ? "sent" : "failed";
+      if (!extra.ok) console.error("turnia_link_email_not_accepted", extra.status);
+    } catch { appLinkEmail = "failed"; }
+  }
+  return reply(200, { status: "accepted_by_smtp", app_link_email: appLinkEmail, app_url: ORIGIN + "/" });
 });
