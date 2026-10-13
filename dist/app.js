@@ -1593,6 +1593,7 @@ $('exportMobile').addEventListener('click',()=> $('export').click());
 
 function showToken(data, target) {
   $(target).textContent = `Invitación para ${data.email}\nCódigo: ${data.token}\nVence: ${new Date(data.expires_at).toLocaleString('es-CL')}${data.duration_days ? `\nMembresía: ${data.duration_days} días` : ''}\nComparte este código por un canal privado.`;
+  $(target).textContent += '\nEnlace de Turnia: https://turnia-kkbm.onrender.com/';
 }
 async function sendInvitationEmail(data, target) {
   showToken(data,target);
@@ -1600,12 +1601,18 @@ async function sendInvitationEmail(data, target) {
   const details = output.textContent;
   output.textContent = details + '\nEnviando correo de invitación…';
   const retry = async () => {
-    let sent = false;
+    let sent = false, extraMail = 'not_configured';
     try {
       const result = await sb.functions.invoke('turnia-invite-email',{body:{token:data.token}});
       sent = !result.error && result.data?.status === 'accepted_by_smtp';
+      extraMail = result.data?.app_link_email || 'not_configured';
     } catch {}
-    output.replaceChildren(document.createTextNode(details + (sent ? '\nCorreo enviado al servicio de correo. La persona podrá confirmar el código y completar su cuenta desde el enlace. Revisa también spam.' : '\nLa invitación se creó, pero no se confirmó el envío del correo. Espera un minuto y reintenta.')));
+    const note = !sent
+      ? '\nLa invitación se creó, pero no se confirmó el envío del correo de activación. Espera un minuto y reintenta.'
+      : extraMail === 'sent'
+        ? '\nCorreo de activación y mensaje adicional con enlace de Turnia y código aceptados por los proveedores. Comprueba Spam.'
+        : '\nCorreo de activación aceptado; el mensaje adicional con el enlace no se confirmó. Puedes compartir los datos de arriba.';
+    output.replaceChildren(document.createTextNode(details + note));
     if (!sent) {
       const button = document.createElement('button'); button.type='button'; button.className='secondary spaced'; button.textContent='Reenviar correo';
       button.onclick = async () => { button.disabled=true; await retry(); }; output.append(button);
