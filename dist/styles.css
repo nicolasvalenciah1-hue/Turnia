@@ -331,3 +331,82 @@
  .topbar .top-logout{min-width:57px;max-width:60px;font-size:10px}
  .summary-grid-home .stat-value{font-size:17px}
 }
+
+
+/* Jornadas registradas: acordeón compacto dentro de la semana elegida. */
+.history-days-panel{min-width:0}
+.history-days-panel .panel-heading{align-items:center;gap:12px}
+.history-days-panel .panel-heading h2{margin-bottom:6px}
+.history-days-panel #historyToggleAll{min-height:40px;white-space:nowrap}
+#history .history-day-list{display:grid;gap:11px;min-width:0}
+#history .history-day-empty{padding:20px;border:1px dashed var(--line);border-radius:13px;text-align:center;margin:0}
+#history .history-day{background:#fff;border:1px solid var(--line);border-radius:13px;min-width:0;overflow:hidden}
+#history .history-day[open]{border-color:#afcfcc;box-shadow:0 7px 19px rgba(15,52,71,.04)}
+#history .history-day>summary{display:flex;gap:15px;align-items:center;min-height:76px;padding:13px 16px;cursor:pointer;list-style:none;user-select:none}
+#history .history-day>summary::-webkit-details-marker{display:none}
+#history .history-day>summary:focus-visible{outline:3px solid #2b9ca4;outline-offset:-4px;border-radius:12px}
+#history .history-day>summary:hover{background:#f6fbfa}
+#history .history-day[open]>summary{background:#f1f9f7;border-bottom:1px solid #d1e6e0}
+#history .history-day-calendar{flex:0 0 48px;width:48px;height:51px;background:#e7f5f3;color:#077e88;border-radius:12px;display:flex;flex-direction:column;justify-content:center;align-items:center;font-size:22px;line-height:1;font-weight:750;font-variant-numeric:tabular-nums}
+#history .history-day-calendar small{font-size:10px;text-transform:uppercase;line-height:1.1;margin-top:5px;letter-spacing:.04em}
+#history .history-day-label{flex:1;min-width:0;display:block}
+#history .history-day-label strong{display:block;font-size:15px;text-transform:capitalize;color:var(--ink);overflow-wrap:anywhere}
+#history .history-day-label small{display:block;margin-top:5px;font-size:12px;line-height:1.3;color:var(--muted)}
+#history .history-day-amount{text-align:right;display:block;white-space:nowrap}
+#history .history-day-amount small{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+#history .history-day-amount strong{display:block;font-size:18px;font-variant-numeric:tabular-nums;color:var(--ink)}
+#history .history-day-caret{color:#60828e;font-size:24px;line-height:1;transition:transform .17s ease;margin-left:1px}
+#history .history-day[open] .history-day-caret{transform:rotate(180deg)}
+#history .history-day-detail{padding:18px 20px}
+#history .history-day-totals{display:flex;align-items:center;flex-wrap:wrap;gap:11px 28px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+#history .history-day-totals>span{display:flex;flex-direction:column;gap:4px}
+#history .history-day-totals small{font-size:10px;color:var(--muted)}
+#history .history-day-totals strong{font-size:16px;font-variant-numeric:tabular-nums}
+#history .history-day-balanced{color:#157664;font-weight:750;font-size:12px}
+#history .history-day-mismatch{color:#a44832;font-weight:750;font-size:12px}
+#history .history-day-area-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:15px}
+#history .history-day-area{min-width:0;border:1px solid #e0eae8;border-radius:11px;overflow:hidden;background:#fff}
+#history .history-day-area-title{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 13px;background:#f0f7f5}
+#history .history-day-area-title strong{font-size:12px;color:var(--ink);overflow-wrap:anywhere}
+#history .history-day-area-title span{font-size:13px;color:var(--ink);font-weight:750;white-space:nowrap;font-variant-numeric:tabular-nums}
+#history .history-day-person{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;border-top:1px solid #eaf0ef}
+#history .history-day-person>span{min-width:0}
+#history .history-day-person>span strong{display:block;font-size:12px;color:var(--ink);overflow-wrap:anywhere}
+#history .history-day-person small{font-size:10px;color:var(--muted);display:block;margin-top:4px}
+#history .history-day-person>.money{font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)}
+#history .history-day-no-payout{margin:8px}
+#history .history-day-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:18px}
+#history .history-day-actions button{min-height:41px}
+#history .history-day-actions .muted{font-size:11px}
+
+@media(max-width:760px){
+ .history-days-panel .panel-heading{align-items:start}
+ #history .history-day-area-list{grid-template-columns:1fr}
+ #history .history-day>summary{gap:11px;padding:12px;min-height:70px}
+ #history .history-day-calendar{flex-basis:42px;width:42px;height:46px;font-size:19px}
+ #history .history-day-label strong{font-size:13px}
+ #history .history-day-label small{font-size:10px}
+ #history .history-day-amount strong{font-size:15px}
+ #history .history-day-amount small{font-size:10px}
+ #history .history-day-caret{font-size:19px}
+ #history .history-day-detail{padding:13px}
+ #history .history-day-totals{gap:13px}
+ #history .history-day-totals strong{font-size:14px}
+ #history .history-day-actions{flex-direction:column;align-items:stretch}
+ #history .history-day-actions button{width:100%}
+ #history .history-day-actions .muted{text-align:center}
+}
+@media(max-width:420px){
+ .history-days-panel .panel-heading{flex-wrap:wrap}
+ .history-days-panel #historyToggleAll{margin-left:auto;min-height:38px}
+ #history .history-day>summary{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:7px 10px}
+ #history .history-day-calendar{grid-column:1;grid-row:1/3}
+ #history .history-day-label{grid-column:2;grid-row:1}
+ #history .history-day-amount{grid-column:2;grid-row:2;display:flex;gap:6px;align-items:baseline;text-align:left}
+ #history .history-day-amount small{margin:0;font-size:10px}
+ #history .history-day-amount strong{font-size:15px}
+ #history .history-day-caret{grid-column:3;grid-row:1/3;align-self:center}
+ #history .history-day-person{padding:11px}
+ #history .history-day-area-title{padding:11px}
+}
+@media(prefers-reduced-motion:reduce){#history .history-day-caret{transition:none}}
