@@ -220,6 +220,9 @@ function setSettingsStatus(text, kind = 'success') {
 }
 function resetData() {
   areas = []; workers = []; days = []; shifts = []; payouts = []; flexShifts = []; flexPayouts = []; restaurantBusiness = {}; restaurantBusinessFor = ''; membershipContext = []; myTips = []; myTipsLoaded = false;
+  supportVersion++; supportTickets=[]; selectedSupportTicket=null;
+  $('supportTickets').innerHTML=''; $('supportThread').classList.add('hide');
+  $('supportThreadMessages').innerHTML=''; $('supportReply').value='';
   resetWorkerForm();
   $('myTipsFrom').value = ''; $('myTipsTo').value = '';
   $('myTipsStatus').textContent = '';
@@ -262,6 +265,14 @@ async function init() {
     } catch (error) { inviteError=errorText(error); }
   }
   context=nextContext;
+  // Metadata selects the setup screen only; the RPC still authorizes creation.
+  // Recovery and existing invitations retain their own flows.
+  if (!recoveryMode && user.user_metadata?.turnia_team_setup === 'v1'
+      && !user.user_metadata?.turnia_registration && !context.platform_admin
+      && !context.can_create && !(context.restaurants || []).length) {
+    location.replace('/equipo.html');
+    return;
+  }
   notificationsAuthorized=false;
   if (context?.platform_admin) {
     // Navigation is hidden until the server confirms the specific account ID.
@@ -303,9 +314,12 @@ async function init() {
   rid = list.some(r => r.id === rid) ? rid : list[0]?.id || '';
   teamSpace=false;
   if (rid) {
-    try { teamSpace=(await call('turnia_is_worker_team',{p_workspace_id:rid}))===true; }
-    catch { teamSpace=false; }
-    if(version!==authVersion)return;
+    const selected=rid;
+    let isTeam=false;
+    try { isTeam=(await call('turnia_is_worker_team',{p_workspace_id:selected}))===true; }
+    catch { isTeam=false; }
+    if(version!==authVersion || selected!==rid)return;
+    teamSpace=isTeam;
   }
   $('restaurant').innerHTML = list.length ? list.map(r => `<option value="${safe(r.id)}">${safe(r.name)}</option>`).join('') : '<option value="">Sin restaurante autorizado</option>';
   $('restaurant').value = rid;
@@ -1358,11 +1372,17 @@ bind('sandboxPay', async () => {
 $('restaurant').onchange = () => guard(async () => {
   rid = $('restaurant').value; loadVersion++; teamSpace=false;
   const selected=rid, changeVersion=loadVersion;
+  // Clear previous data and block edits before the first network wait.
+  loadingData=true;
+  resetData(); renderAccountSettings(); updatePermissions();
+  let isTeam=false;
   if(selected){
-    try { teamSpace=(await call('turnia_is_worker_team',{p_workspace_id:selected}))===true; } catch { teamSpace=false; }
+    try { isTeam=(await call('turnia_is_worker_team',{p_workspace_id:selected}))===true; } catch { isTeam=false; }
     if(selected!==rid || changeVersion!==loadVersion)return;
   }
-  resetData(); renderAccountSettings();
+  teamSpace=isTeam;
+  if(!selected)loadingData=false;
+  renderAccountSettings();
   if(!teamSpace && currentRestaurant()?.role==='owner')void loadRestaurantBusiness(rid);
   if (tab === 'access') void loadTeam();
   if (tab === 'support') void loadSupport();
