@@ -5,6 +5,7 @@ const {app,flush}=require('./ui-check.cjs');
 function installSupportStore(ctx,{tickets=[],messages=[]}={}){
   let sequence=0;
   const {sb,calls,user}=ctx;
+  sb.functions={invoke:async(name,request)=>{calls.push(['edge_notify',name,request]);return {data:{status:'not_configured'},error:null};}};
   const list=(table)=>table==='turnia_support_tickets'?tickets:messages;
   sb.from=table=>{
     assert(['turnia_support_tickets','turnia_support_messages'].includes(table),'Support requests must use support tables only');
@@ -52,6 +53,8 @@ function installSupportStore(ctx,{tickets=[],messages=[]}={}){
   assert.equal(store.tickets[0].restaurant_id,'r1','Ticket belongs to selected restaurant');
   assert.equal(store.tickets[0].created_by,'test-user','Ticket attributed to signed-in user');
   assert.equal(store.tickets[0].status,'pendiente','Support ticket starts pending');
+  assert(a.calls.some(x=>x[0]==='edge_notify'&&x[1]==='turnia-support-notify'&&x[2].body.ticket_id===store.tickets[0].id),'Client requests notification after ticket creation');
+  assert.match(a.d.querySelector('#supportComposeStatus').textContent,/pendiente de configuración/i,'No mail delivery is claimed by the mock');
   assert.match(a.d.querySelector('#supportComposeStatus').textContent,/registrada/i,'Success is shown only after insert');
   assert.match(a.d.querySelector('#supportTickets').textContent,/Problema al guardar/);
   a.d.querySelector('#supportTickets [data-support-open]').click();await flush();
