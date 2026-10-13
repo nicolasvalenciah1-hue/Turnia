@@ -26,6 +26,7 @@ let restaurantBusiness = {}, restaurantBusinessFor = '', inviteError = '';
 let membershipContext = [], tab = 'home', loadingData = false, loadVersion = 0, recoveryMode = false;
 let guideIndex = 0, guideDone = false, tourDismissed = false;
 let selectedHistoryMonday = '';
+let selectedWeeklyPerson = '';
 let authVersion = 0, teamVersion = 0, platformVersion = 0;
 let teamMembers = [], teamInvitations = [], platformRestaurants = [], platformInvitations = [];
 let supportTickets = [], ownerSupportTickets = [], selectedSupportTicket = null, supportVersion = 0, ownerSupportVersion = 0;
@@ -217,7 +218,7 @@ function resetData() {
   $('myTipsFrom').value = ''; $('myTipsTo').value = '';
   $('myTipsStatus').textContent = '';
   $('inviteResult').textContent = ''; $('staffInviteResult').textContent = '';
-  selectedHistoryMonday = '';
+  selectedHistoryMonday = ''; selectedWeeklyPerson = '';
   render(); renderMembershipCard(null);
   teamVersion++; teamMembers = []; teamInvitations = [];
   $('teamMembers').innerHTML = ''; $('teamInvitations').innerHTML = ''; $('teamStatus').textContent = ''; renderWorkerOptions();
@@ -605,6 +606,97 @@ function weeklySettlement() {
   const distributed=details.reduce((sum,d)=>sum+d.amount,0);
   return {from,to,dates,recorded,details,people:peopleSorted,areas:areaSorted,amount,distributed,difference:amount-distributed};
 }
+// Interactive weekly settlement: collapsible area groups, each worker's seven-day
+// detail, and a downloadable personal XLSX. Nothing here changes tip calculations.
+function weeklyPersonIdentity(item) {
+  return String(item.area_id)+'|'+(item.worker_id||'nombre:'+item.worker_name);
+}
+function workerInitials(name) {
+  return String(name||'').trim().split(/\s+/).slice(0,2).map(piece=>piece[0]||'').join('').toUpperCase()||'—';
+}
+function renderWeeklyPersonDetail(week=weeklySettlement()) {
+  const target=$('weeklyPersonDetail');
+  const person=week.people.find(p=>p.key===selectedWeeklyPerson);
+  if(!person){target.classList.add('hide');target.innerHTML='';return;}
+  const rows=week.details.filter(item=>weeklyPersonIdentity(item)===person.key);
+  target.classList.remove('hide');
+  target.innerHTML='<div class="weekly-person-title"><div><p class="eyebrow">LIQUIDACIÓN INDIVIDUAL</p><h3>'+
+    safe(person.name)+'</h3><p class="muted">'+safe(person.area)+' · '+person.dates.size+' día(s) registrado(s)</p></div>'+
+    '<button type="button" class="ghost small" data-week-close aria-label="Cerrar detalle individual">Cerrar ×</button></div>'+
+    '<div class="weekly-person-total"><small>Total calculado de la semana</small><strong>'+clp(person.total)+'</strong></div>'+
+    '<div class="weekly-person-days">'+week.dates.map(date=>{
+      const parts=rows.filter(row=>row.date===date);
+      return '<div class="weekly-person-day"><div><strong>'+safe(dateLabel(date))+'</strong>'+
+      '<small>'+(parts.length?parts.map(p=>safe(p.turno)).join(' · '):'Sin monto asignado')+'</small></div>'+
+      '<strong class="money">'+clp(parts.reduce((sum,p)=>sum+p.amount,0))+'</strong></div>';
+    }).join('')+'</div>'+
+    '<div class="weekly-person-actions"><button class="secondary" type="button" data-week-person-xlsx>'+
+    'Descargar liquidación individual</button><p class="muted">Documento de cálculo, no comprobante de transferencia bancaria.</p></div>';
+}
+function renderWeeklyGroups(week=weeklySettlement()){
+  const rows=week.areas.map((area,index)=>{
+    const members=week.people.filter(p=>String(p.area_id)===String(area.area_id));
+    const elements=members.map(p=>'<button type="button" class="weekly-worker" data-week-person="'+safe(p.key)+
+      '" aria-label="Ver liquidación de '+safe(p.name)+'"><span class="weekly-worker-avatar" aria-hidden="true">'+safe(workerInitials(p.name))+
+      '</span><span class="weekly-worker-copy"><strong>'+safe(p.name)+'</strong><small>'+p.dates.size+' día(s) trabajado(s) · Pago sin registrar</small></span>'+
+      '<span class="weekly-worker-amount">'+clp(p.total)+'</span><span class="weekly-worker-arrow" aria-hidden="true">›</span></button>').join('');
+    return '<details class="weekly-area-group" '+(index===0?'open':'')+'>'+
+      '<summary><span class="weekly-area-icon" aria-hidden="true">≡</span><span class="weekly-area-copy"><strong>'+safe(area.name)+
+      '</strong><small>'+members.length+' persona(s)</small></span><span class="weekly-area-amount"><small>Total del área</small><strong>'+
+      clp(area.total)+'</strong></span><span class="weekly-area-chevron" aria-hidden="true">⌄</span></summary>'+
+      '<div class="weekly-group-workers">'+elements+'</div></details>';
+  }).join('');
+  $('weeklyGroups').innerHTML=rows||'<p class="muted">Todavía no hay liquidaciones para esta semana.</p>';
+  $('weeklyExpandAll').disabled=!week.areas.length;
+  $('weeklyExpandAll').textContent='Expandir todas ↓';
+  renderWeeklyPersonDetail(week);
+}
+function downloadWeeklyPerson(){
+  const week=weeklySettlement(),person=week.people.find(p=>p.key===selectedWeeklyPerson);
+  if(!person)throw Error('Selecciona un trabajador antes de exportar.');
+  if(!window.TurniaXlsx)throw Error('No se pudo cargar el generador de Excel.');
+  const entries=week.details.filter(item=>weeklyPersonIdentity(item)===person.key)
+    .slice().sort((a,b)=>a.date.localeCompare(b.date)||a.turno.localeCompare(b.turno));
+  const subtitle=(currentRestaurant()?.name||'Restaurante')+' · '+weekDescription(week.from);
+  window.TurniaXlsx.download([
+    {name:'Liquidación individual',title:'TURNIA · LIQUIDACIÓN PERSONAL',subtitle,
+      note:person.name+' · '+person.area+' · Documento de cálculo, no acredita transferencia.',
+      headers:['Fecha','Área','Turno','Participación %','Horas','Propina CLP'],
+      rows:entries.map(item=>[item.date,item.area_name,item.turno,Number(item.participation.toFixed(2)),item.hours??'',item.amount]),
+      total:['TOTAL','','','',person.dates.size,person.total],money:[5],widths:[19,24,24,21,16,22]}
+  ],'Turnia_Liquidacion_'+week.from+'_'+person.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,45)+'.xlsx');
+  msg('Liquidación individual descargada. No se confirma ningún pago.','success');
+}
+$('weeklyGroups').addEventListener('click',event=>{
+  const button=event.target.closest('[data-week-person]');
+  if(!button)return;
+  selectedWeeklyPerson=button.dataset.weekPerson;
+  renderWeeklyPersonDetail();
+  const panel=$('weeklyPersonDetail');
+  if(typeof panel.scrollIntoView==='function')panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+$('weeklyWorkerRows').addEventListener('click',event=>{
+  const button=event.target.closest('[data-week-person]');
+  if(!button)return;
+  selectedWeeklyPerson=button.dataset.weekPerson;
+  renderWeeklyPersonDetail();
+  const panel=$('weeklyPersonDetail');
+  if(typeof panel.scrollIntoView==='function')panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+$('weeklyPersonDetail').addEventListener('click',event=>{
+  if(event.target.closest('[data-week-close]')){
+    selectedWeeklyPerson='';renderWeeklyPersonDetail();
+  }else if(event.target.closest('[data-week-person-xlsx]')){
+    guard(async()=>downloadWeeklyPerson(),event.target.closest('[data-week-person-xlsx]'));
+  }
+});
+$('weeklyExpandAll').onclick=()=>{
+  const groups=[...$('weeklyGroups').querySelectorAll('details')];
+  const expand=groups.some(group=>!group.open);
+  for(const group of groups)group.open=expand;
+  $('weeklyExpandAll').textContent=expand?'Contraer todas ↑':'Expandir todas ↓';
+};
+
 function renderHistory() {
   const week=weeklySettlement(),data=week.recorded;
   const available=new Set(allHistoryDays().map(d=>weekMonday(d.date)));
@@ -632,8 +724,10 @@ function renderHistory() {
   notice.textContent=!data.length?'Selecciona una semana que tenga jornadas para consultar las liquidaciones.':
     week.difference?'Atención: el total de las jornadas y el reparto no coinciden por '+clp(Math.abs(week.difference))+'. Revisa las áreas antes de pagar.':
     'Los montos calculados cuadran con las jornadas registradas. Este resumen NO confirma que se haya hecho ninguna transferencia.';
+  renderWeeklyGroups(week);
+  $('weeklyMobileTotal').textContent=clp(week.distributed);
   $('weeklyWorkerRows').innerHTML=week.people.map(person=>
-    '<tr><td>'+safe(person.area)+'</td><td><strong>'+safe(person.name)+'</strong></td><td>'+person.dates.size+
+    '<tr><td>'+safe(person.area)+'</td><td><button class="weekly-desktop-worker" type="button" data-week-person="'+safe(person.key)+'" aria-label="Ver detalle semanal de '+safe(person.name)+'">'+safe(person.name)+'</button></td><td>'+person.dates.size+
     '</td><td class="money">'+clp(person.total)+'</td></tr>').join('')+
     (week.people.length?'<tr class="weekly-total-row"><td colspan="3">TOTAL A LIQUIDAR</td><td class="money">'+clp(week.distributed)+'</td></tr>':
       emptyRow(4,'Todavía no existen montos asignados para esta semana.'));
@@ -642,14 +736,16 @@ function renderHistory() {
     (week.areas.length?'<tr class="weekly-total-row"><td colspan="2">TOTAL DISTRIBUIDO</td><td class="money">'+clp(week.distributed)+'</td></tr>':
       emptyRow(3,'No hay áreas con repartos esta semana.'));
   $('export').disabled=!week.details.length;
+  $('exportMobile').disabled=!week.details.length;
 }
 $('historyWeekSelect').onchange=()=>{
   selectedHistoryMonday=weekMonday($('historyWeekSelect').value);
+  selectedWeeklyPerson='';
   renderHistory();
 };
-$('historyPrevWeek').onclick=()=>{selectedHistoryMonday=localDateOffset(chosenHistoryWeek(),-7);renderHistory();};
-$('historyNextWeek').onclick=()=>{selectedHistoryMonday=localDateOffset(chosenHistoryWeek(),7);renderHistory();};
-$('historyCurrentWeek').onclick=()=>{selectedHistoryMonday=weekMonday(today());renderHistory();};
+$('historyPrevWeek').onclick=()=>{selectedHistoryMonday=localDateOffset(chosenHistoryWeek(),-7);selectedWeeklyPerson='';renderHistory();};
+$('historyNextWeek').onclick=()=>{selectedHistoryMonday=localDateOffset(chosenHistoryWeek(),7);selectedWeeklyPerson='';renderHistory();};
+$('historyCurrentWeek').onclick=()=>{selectedHistoryMonday=weekMonday(today());selectedWeeklyPerson='';renderHistory();};
 
 function renderHome() {
   const month=today().slice(0,7),classic=days.filter(d=>d.work_date.startsWith(month));
@@ -1311,6 +1407,8 @@ bind('export',async()=>{
   window.TurniaXlsx.download(sheets,'Turnia_Cierre_'+week.from+'_al_'+week.to+'.xlsx');
   msg('Excel semanal generado: cierre, jornadas, detalle, áreas y control de transferencias. El archivo no confirma pagos.','success');
 });
+
+$('exportMobile').addEventListener('click',()=> $('export').click());
 
 function showToken(data, target) {
   $(target).textContent = `Invitación para ${data.email}\nCódigo: ${data.token}\nVence: ${new Date(data.expires_at).toLocaleString('es-CL')}${data.duration_days ? `\nMembresía: ${data.duration_days} días` : ''}\nComparte este código por un canal privado.`;
