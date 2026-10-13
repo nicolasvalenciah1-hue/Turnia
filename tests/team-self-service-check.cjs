@@ -7,9 +7,13 @@ const page=fs.readFileSync(__dirname+'/../dist/equipo.html','utf8');
 const code=fs.readFileSync(__dirname+'/../dist/equipo.js','utf8');
 const migration=fs.readFileSync(__dirname+'/../supabase/migrations/20261013_worker_team_self_service.sql','utf8');
 const kind=fs.readFileSync(__dirname+'/../supabase/migrations/20261013_worker_team_kind.sql','utf8');
-function createTeamPage({confirmed=false}={}){
+function createTeamPage({confirmed=false,keepSession=true}={}){
   const dom=new JSDOM(page,{url:'https://turnia.test/equipo.html',runScripts:'outside-only'});
   const w=dom.window, d=w.document, calls=[];
+  w.localStorage.setItem('propina_keep_session',keepSession?'1':'0');
+  w.localStorage.setItem('sb-kfaolqnrqlypoyzkejlt-auth-token','old-fixture-session');
+  const navigations=[]; w.__navigate=target=>navigations.push(target);
+  let clientOptions;
   const account={id:'user01',email:'test@example.test',email_confirmed_at:'2026-10-13T01:00:00Z',user_metadata:{turnia_team_name:'Garzones del centro'}};
   const session=confirmed?{user:account}:null;
   const sb={auth:{
@@ -18,9 +22,9 @@ function createTeamPage({confirmed=false}={}){
     signUp:async(args)=>{calls.push(['signUp',args]);return{data:{session:null,user:{id:'pending'}}};},
     signInWithPassword:async(args)=>{calls.push(['signIn',args]);return{data:{session:{user:account}}};}
   },rpc:async(name,args)=>{calls.push(['rpc',name,args]);return{data:'team-demo-id'};}};
-  w.supabase={createClient:()=>sb};
-  w.eval(code);
-  return {dom,w,d,calls};
+  w.supabase={createClient:(_url,_key,options)=>{clientOptions=options;return sb;}};
+  w.eval(code.replaceAll('location.assign(', 'window.__navigate('));
+  return {dom,w,d,calls,navigations,clientOptions};
 }
 (async()=>{
   assert.match(migration,/email_confirmed_at is not null/);
@@ -38,6 +42,7 @@ function createTeamPage({confirmed=false}={}){
 
   const signup=createTeamPage();
   await flush();
+  assert.equal(signup.clientOptions.auth.storage,signup.w.localStorage);
   assert.equal(signup.d.querySelector('#authArea').hidden,false);
   signup.d.querySelector('#fullName').value='Camila Soto';
   signup.d.querySelector('#teamNameSignup').value='Garzones del centro';
@@ -65,7 +70,13 @@ function createTeamPage({confirmed=false}={}){
   verified.d.querySelector('#teamForm').dispatchEvent(new verified.w.Event('submit',{bubbles:true,cancelable:true}));
   await flush();
   assert(verified.calls.some(x=>x[0]==='rpc'&&x[1]==='turnia_create_worker_team'&&x[2].team_name==='Garzones del centro'));
+  assert.deepEqual(verified.navigations,['/?equipo_creado=1']);
   verified.dom.window.close();
+
+  const temporary=createTeamPage({confirmed:true,keepSession:false});await flush();
+  assert.equal(temporary.clientOptions.auth.storage,temporary.w.sessionStorage,'Team and app use the same temporary session store');
+  assert.equal(temporary.w.localStorage.getItem('sb-kfaolqnrqlypoyzkejlt-auth-token'),null,'Temporary login leaves no persistent session behind');
+  temporary.dom.window.close();
 
   const team=await app({platform:false,completed:false,rpcOverrides:{
     turnia_is_worker_team:async()=>({data:true})

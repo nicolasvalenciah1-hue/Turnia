@@ -7,11 +7,13 @@ const code = fs.readFileSync(__dirname+'/../dist/app.js','utf8');
 const weeklyExcelCode = fs.readFileSync(__dirname+'/../dist/weekly-excel.js','utf8');
 const flush = () => new Promise(r => setTimeout(r,20));
 const date = new Date().toISOString().slice(0,10);
-async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}, dataOverrides={}}={}) {
+async function app({role='owner', platform=true, restaurant=true, loggedIn=true, completed=true, registered=false, invitationCode='', initialPassword='OldPassword123', restaurantContext={}, rpcOverrides={}, authOverrides={}, dataOverrides={}, userMetadata={}}={}) {
   const dom = new JSDOM(html,{url:'https://turnia.test/',runScripts:'outside-only'}), w=dom.window, d=w.document;
   const calls=[]; let capturedBlob; const errors=[];
   w.addEventListener('error',e=>errors.push(e.error));
   const user={id:'test-user',email:'owner@example.test',user_metadata:registered?{turnia_registration:'v1'}:invitationCode?{propina_invitation:invitationCode}:{}};
+  Object.assign(user.user_metadata,userMetadata);
+  const navigations=[]; w.__navigate=target=>navigations.push(target);
   let session=loggedIn?{user}:null, storedPassword=initialPassword;
   const context={display_name:'Nicolás Valencia',platform_admin:platform,can_create:platform||!restaurant&&!invitationCode,restaurants:restaurant?[{id:'r1',name:'Local uno',role,...restaurantContext},{id:'r2',name:'Local dos',role}]:[]};
   if(completed)w.localStorage.setItem('turnia_guide_v1_test-user',JSON.stringify({done:true,step:9}));
@@ -98,8 +100,8 @@ async function app({role='owner', platform=true, restaurant=true, loggedIn=true,
   w.supabase={createClient:()=>sb};
   w.confirm=()=>true; w.URL.createObjectURL=blob=>{capturedBlob=blob;return 'blob:mock';};w.URL.revokeObjectURL=()=>{};
   w.HTMLAnchorElement.prototype.click=function(){};
-  w.eval(weeklyExcelCode); w.eval(code); await flush();
-  return {w,d,calls,errors,dom,authChange,sb,user,context,blob:()=>capturedBlob};
+  w.eval(weeklyExcelCode); w.eval(code.replaceAll('location.replace(', 'window.__navigate(')); await flush();
+  return {w,d,calls,errors,dom,authChange,sb,user,context,navigations,blob:()=>capturedBlob};
 }
 if (require.main === module) (async()=>{
   const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]); assert.equal(new Set(ids).size,ids.length,'Unique HTML IDs');
@@ -108,12 +110,12 @@ if (require.main === module) (async()=>{
   const css=fs.readFileSync(__dirname+'/../dist/styles.css','utf8');
   const sw=fs.readFileSync(__dirname+'/../dist/sw.js','utf8');
   assert(html.includes('styles.css?v=team-spaces-20261013-1'),'Styles asset is versioned');
-  assert(html.includes('app.js?v=team-spaces-20261013-1'),'App asset is versioned');
+  assert(html.includes('app.js?v=workspace-safety-20261013-2'),'App asset is versioned');
   assert(html.includes('weekly-excel.js?v=weekly-settlement-20261012-1'),'Offline XLSX generator is loaded');
   assert(css.includes('.topbar .top-logout{display:inline-flex!important'),'Logout remains visible');
   assert(css.includes('.classic-participation-agreement'),'Classic participation controls are styled');
   assert(css.includes('.classic-area-preview'),'Independent area quota preview is styled');
-  assert(sw.includes('turnia-shell-v16'),'App shell cache version bumped');
+  assert(sw.includes('turnia-shell-v17'),'App shell cache version bumped');
   assert(css.includes('@media(max-width:600px)'),'Mobile CSS applies to small phones');
   assert(css.includes('.summary-grid-home'),'Dashboard KPI cards use responsive layout');
   assert(css.includes('.weekly-mobile-bottom'),'Weekly Excel action has mobile sticky bar');

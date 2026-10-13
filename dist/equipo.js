@@ -3,8 +3,16 @@
   const $ = id => document.getElementById(id);
   const PROJECT_URL = 'https://kfaolqnrqlypoyzkejlt.supabase.co';
   const PUBLIC_KEY = 'sb_publishable_uT_FeTqwfX8AhkUtgmo--Q_bemTQkwP';
+  // Match the main app so a temporary session survives the setup redirect
+  // without being persisted on a shared device.
+  let sessionStorageBackend;
+  try {
+    const keepSession=localStorage.getItem('propina_keep_session')!=='0';
+    sessionStorageBackend=keepSession?localStorage:sessionStorage;
+    if(!keepSession)localStorage.removeItem('sb-kfaolqnrqlypoyzkejlt-auth-token');
+  } catch { sessionStorageBackend=undefined; }
   const sb = window.supabase?.createClient(PROJECT_URL, PUBLIC_KEY, {
-    auth: { persistSession: true, detectSessionInUrl: true }
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage:sessionStorageBackend }
   });
   const check = response => { if(response.error) throw response.error; return response.data; };
   const message = (text, bad=false) => {
